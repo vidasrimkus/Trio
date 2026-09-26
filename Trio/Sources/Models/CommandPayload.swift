@@ -20,7 +20,14 @@ struct CommandPayload: Decodable, Sendable {
     var fat: Int?
     var overrideName: String?
     var scheduledTime: TimeInterval?
+    /// `set_dosing_mode` only: a `DosingMode` rawValue ("closed", "open", "lowGlucoseSuspend", "basalTesting").
+    var dosingMode: String?
     var returnNotification: ReturnNotificationInfo?
+
+    /// The mode a `set_dosing_mode` command asks for, or nil when `dosing_mode` is missing or not a known mode.
+    var requestedDosingMode: DosingMode? {
+        dosingMode.flatMap(DosingMode.init(rawValue:))
+    }
 
     struct ReturnNotificationInfo: Decodable, Sendable {
         let productionEnvironment: Bool
@@ -52,6 +59,7 @@ struct CommandPayload: Decodable, Sendable {
         case commandType = "command_type"
         case bolusAmount = "bolus_amount"
         case scheduledTime = "scheduled_time"
+        case dosingMode = "dosing_mode"
         case returnNotification = "return_notification"
     }
 
@@ -88,6 +96,12 @@ struct CommandPayload: Decodable, Sendable {
             }
         case .cancelOverride:
             description += "Cancel Override command."
+        case .setDosingMode:
+            if let mode = requestedDosingMode {
+                description += "Dosing Mode: \(mode.displayName)."
+            } else {
+                description += "Dosing Mode: invalid (\(dosingMode ?? "missing"))."
+            }
         }
 
         if let scheduledTime = scheduledTime {
@@ -111,6 +125,7 @@ extension TrioRemoteControl {
         case meal
         case startOverride = "start_override"
         case cancelOverride = "cancel_override"
+        case setDosingMode = "set_dosing_mode"
 
         var description: String {
             switch self {
@@ -126,6 +141,8 @@ extension TrioRemoteControl {
                 return "Start Override"
             case .cancelOverride:
                 return "Cancel Override"
+            case .setDosingMode:
+                return "Set Dosing Mode"
             }
         }
     }
