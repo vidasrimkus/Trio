@@ -17,7 +17,11 @@ change how much insulin is delivered. Read `CUSTOMIZATIONS.md` before any work.
    changes come in only through the procedure below.
 5. **If an interface with LoopFollow or t1d-monitor changes** (see `CUSTOMIZATIONS.md` §3), say exactly
    what has to change in `vidasrimkus/LoopFollow` and/or `t1d-monitor`.
-6. Tests run on GitHub, not locally (no Swift toolchain on the Windows machine):
+6. **Two pumps are used: Dana and Omnipod DASH.** Read `CUSTOMIZATIONS.md` §5 before touching anything
+   basal- or pump-related: a Dana does not receive Trio's schedule when paired, gets temp basals as a
+   percentage of DanaKit's copy, needs whole-hour segments, and truncates some rates. After every Dana
+   (re)connection the schedule must be saved from Trio by hand (procedure in §5).
+7. Tests run on GitHub, not locally (no Swift toolchain on the Windows machine):
    `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`. Before any merge proposal:
    green tests + a reviewer pass on the final commit.
 
@@ -34,4 +38,6 @@ f. Run `unit_tests.yml` on the branch, then the reviewer.
 g. Update `CUSTOMIZATIONS.md` (new base version, commits, anything that moved).
 h. **Stop before merging to `main`**; show results and wait for Vidas's word.
 i. After the build, remind Vidas: install the TestFlight build on the child's phone **during the day**,
-   export CSV before, and check after — pump, CGM, loop running, dosing mode.
+   export CSV before, and check after — pump, CGM, loop running, dosing mode. **If a Dana is in use,
+   also check the pump's active basal profile (24 hourly rates) against Trio's Basal Profile, and if
+   they differ run the manual procedure in `CUSTOMIZATIONS.md` §5.**

@@ -65,7 +65,38 @@ If any of these contracts changes, `vidasrimkus/LoopFollow` and `t1d-monitor` mu
   so a TestFlight install replaces the app in place and keeps settings and pump/CGM pairing.
 - First TestFlight build: 1.0.1 (2), 2026-09-26.
 
-## 5. Considered and REJECTED
+## 5. Pumps in use and Dana limitations (not changed by us — upstream/DanaKit behaviour)
+
+Two pumps are used and swapped from time to time: **Dana** (DanaKit, `loopandlearn/DanaKit@a2d3aa4`) and
+**Omnipod DASH** (OmnipodKit, `loopandlearn/OmnipodKit@4e923d7`). Facts read from the pinned driver sources:
+
+1. **Trio's basal schedule is NOT written to a Dana when it is paired.** Trio passes its schedule as initial
+   settings (`PumpConfigStateModel.swift:20-35`), DanaKit only stores it in its own state
+   (`DanaUICoordinator.swift:74-76`). The only code that writes a schedule to the pump is
+   `syncBasalRateSchedule` (`DanaKitPumpManager.swift:1091`), called only by Trio's Basal Profile editor.
+   Until then the pump runs whatever profile it already had; Trio does not detect a difference
+   (`syncDeliveryLimits` reads the pump's rates but keeps only `maxBasal`, `DanaKitPumpManager.swift:1199-1275`).
+2. **Trio's temp basals reach a Dana as a percentage** of the schedule DanaKit holds
+   (`absoluteBasalRateToPercentage`, `DanaKitPumpManager.swift:1359-1378`); the pump applies that
+   percentage to its own active profile. If the two differ, every non-zero temp delivers a different
+   amount than Trio intended (0 % temps are unaffected).
+3. **Only whole-hour segments are safe on a Dana.** `convertBasal` (`DanaKitPumpManagerState.swift:390-407`)
+   maps the schedule onto 24 hourly rates; a segment starting off the hour (e.g. 02:30) stops the index
+   from advancing, so every later hour gets the previous rate on the pump. Trio's editor allows a
+   30-minute grid, so this can happen from the phone too.
+4. **Rates are encoded as `UInt16(rate * 100)`** (`DanaBasalSetProfileRate.swift`), which truncates some
+   values by 0.01 U/h (e.g. 0.29 → 0.28; at 0.05 steps 1.15, 2.05, 2.30, 2.55, 4.10, 4.35, 4.60, 4.85).
+5. Omnipod DASH, by contrast, stops all delivery (`cancelDelivery(.all)`) before programming a new schedule
+   (`OmniPumpManager.swift:1834-1901`); a broken connection between the two steps leaves the pod suspended
+   until it is resumed on the phone.
+
+**Manual procedure after every Dana (re)connection** (new pairing, or back from Omnipod DASH):
+Trio → Therapy → Basal Profile → change one value, Save, change it back, Save (Save stays disabled
+without a change; each save writes the whole schedule to pump profile 0 and activates it). Then check on
+the pump screen that the active profile's 24 hourly rates match Trio. t1d-monitor sends a Telegram
+reminder when it sees a Dana connect (`dana-connected` rule).
+
+## 6. Considered and REJECTED
 
 **Forced loop right after a remote mode change** (branch `feat/remote-mode-immediate-loop`, commit
 `d5054fe`, deleted). Idea: call `apsManager.heartbeat(date:)` after the write so the new mode reaches
