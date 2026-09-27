@@ -103,12 +103,33 @@ import Testing
     @Test("Hash vectors") func hashVectors() {
         let child = entries([(0, "0.4"), (120, "0.55"), (180, "0.55"), (300, "0.6"), (360, "0.6"), (480, "0.6"),
                              (600, "0.7"), (780, "0.4"), (1140, "0.45")])
-        #expect(R.hash(child) == "fd950334d8df0b65")
-        #expect(R.hash(entries([(0, "1")])) == "cb753f988e32a89d")
-        #expect(R.hash(entries([(0, "0.35"), (420, "1.2"), (1320, "0.45")])) == "aa5480f602dbc4d4")
+        #expect(R.hash(child) == "5c367b5397636149")
+        #expect(R.hash(entries([(0, "1")])) == "946f8ef5ec7fc61e")
+        #expect(R.hash(entries([(0, "0.35"), (420, "1.2"), (1320, "0.45")])) == "eabd566dccabc3e6")
+        #expect(R.hash(entries([(0, "0.4"), (150, "0.5"), (300, "0.6")])) == "acff0d328fca2e73")
         // Order-independent and formatting-independent.
-        #expect(R.hash(Array(child.reversed())) == "fd950334d8df0b65")
-        #expect(R.hash(entries([(0, "1.00")])) == "cb753f988e32a89d")
+        #expect(R.hash(Array(child.reversed())) == "5c367b5397636149")
+        #expect(R.hash(entries([(0, "1.00")])) == "946f8ef5ec7fc61e")
+    }
+
+    @Test("Hash depends on the schedule, not on how it is split") func hashIgnoresSplitting() {
+        // [02:00 0.55, 03:00 0.55] == [02:00 0.55]
+        #expect(R.hash(entries([(0, "0.4"), (120, "0.55"), (180, "0.55")])) == R.hash(entries([(0, "0.4"), (120, "0.55")])))
+        #expect(R.hash(entries([(0, "0.4"), (120, "0.55")])) == "b692201fbdc3d38e")
+        // Trio's stored child schedule (with repeats) == the merged form LoopFollow sends.
+        let merged = entries([(0, "0.4"), (120, "0.55"), (300, "0.6"), (600, "0.7"), (780, "0.4"), (1140, "0.45")])
+        #expect(R.hash(merged) == "5c367b5397636149")
+        // A different schedule gives a different hash.
+        #expect(R.hash(entries([(0, "0.4"), (120, "0.56")])) != "b692201fbdc3d38e")
+    }
+
+    @Test("A schedule with 30-minute segments hashes stably") func halfHourSegments() {
+        let a = entries([(0, "0.4"), (150, "0.5"), (300, "0.6")])
+        let b = entries([(300, "0.6"), (0, "0.4"), (150, "0.5"), (180, "0.5")])
+        #expect(R.hash(a) == "acff0d328fca2e73")
+        #expect(R.hash(b) == "acff0d328fca2e73")
+        // 02:30 matters: moving it to 02:00 changes the hash.
+        #expect(R.hash(entries([(0, "0.4"), (120, "0.5"), (300, "0.6")])) != "acff0d328fca2e73")
     }
 
     @Test("Daily total") func dailyTotal() {

@@ -130,7 +130,8 @@ DanaKit or OmnipodKit.
    Basal; rate a whole number of hundredths that is in the pump's `supportedBasalRates`; for a Dana,
    `UInt16(Double(rate) * 100)` must equal the hundredths (the Decimal → Double path the editor uses, then
    DanaKit's encoding) — otherwise rejected.
-4. New schedule's hash == active hash → "Already active: X", nothing written (re-sending is safe).
+4. New schedule's hash == active hash → "Already active: X", nothing written (re-sending is safe). The hash
+   is of what the schedule delivers, so this holds however either side splits it into entries.
 5. `expected_active_hash` ≠ active hash → rejected ("the active basal schedule changed since it was read").
 6. Write through the Basal Profile editor's own path, `BasalProfileEditor.Provider.saveProfile` (pump first,
    local file only on success). On failure nothing is saved in Trio and the error reads
@@ -139,12 +140,28 @@ DanaKit or OmnipodKit.
 7. On success the editor's follow-up: `basalProfileDidChange` broadcast, Nightscout `uploadProfiles`, Tidepool
    settings; plus a Nightscout Note "Basal schedule activated remotely: X (a → b U/d, <hash>)".
 
-**Schedule hash (shared with LoopFollow).** For every entry in start order
-`"<minutes from midnight>:<rate in hundredths of U/h>"`, joined with `;`; hash = lowercase hex of the first
-8 bytes of SHA-256 over the UTF-8 bytes. Vectors (tested in `RemoteBasalScheduleTests`):
+**Schedule hash (shared with LoopFollow) — depends on the schedule, not on how it is split.**
+1. Sort the entries by start (minutes from midnight).
+2. For each of the 48 half-hours `slot = 0 … 47` (minute `slot × 30`: 00:00, 00:30, … 23:30), take the rate of
+   the entry with the latest start ≤ that minute; if there is none (schedule not starting at 00:00), take the
+   last entry (a daily schedule wraps).
+3. Convert each rate to whole hundredths of U/h: `rate × 100`, rounded half-up to an integer (Trio: Decimal
+   `NSDecimalRound(.plain)`; LoopFollow: the same on Decimal, or `Int((rate × 100).rounded())` for Nightscout
+   doubles — identical for 2-decimal rates).
+4. Join the 48 integers with `;` (no spaces, no trailing separator).
+5. Hash = lowercase hex of the first 8 bytes of SHA-256 over the UTF-8 bytes of that string (16 hex characters).
 
-| Schedule | Canonical string | Hash | Daily total |
+Works for any stored schedule, including one with 30-minute segments saved on the phone (which
+`set_basal_schedule` itself does not accept). Vectors (tested in Trio `RemoteBasalScheduleTests` and LoopFollow
+`BasalProfileTests`):
+
+| Schedule | Canonical (48 values) | Hash | Daily total |
 |---|---|---|---|
-| 00:00 0.40, 02:00 0.55, 03:00 0.55, 05:00 0.60, 06:00 0.60, 08:00 0.60, 10:00 0.70, 13:00 0.40, 19:00 0.45 | `0:40;120:55;180:55;300:60;360:60;480:60;600:70;780:40;1140:45` | `fd950334d8df0b65` | 12.2 U |
-| 00:00 1.00 | `0:100` | `cb753f988e32a89d` | 24 U |
-| 00:00 0.35, 07:00 1.20, 22:00 0.45 | `0:35;420:120;1320:45` | `aa5480f602dbc4d4` | — |
+| V1: 00:00 0.40, 02:00 0.55, 03:00 0.55, 05:00 0.60, 06:00 0.60, 08:00 0.60, 10:00 0.70, 13:00 0.40, 19:00 0.45 | 40×4, 55×6, 60×10, 70×6, 40×12, 45×10 | `5c367b5397636149` | 12.2 U |
+| V1 merged: 00:00 0.40, 02:00 0.55, 05:00 0.60, 10:00 0.70, 13:00 0.40, 19:00 0.45 | same | `5c367b5397636149` | 12.2 U |
+| V2: 00:00 1.00 | 100×48 | `946f8ef5ec7fc61e` | 24 U |
+| V3: 00:00 0.35, 07:00 1.20, 22:00 0.45 | 35×14, 120×30, 45×4 | `eabd566dccabc3e6` | — |
+| V4 (30-min segment): 00:00 0.40, 02:30 0.50, 05:00 0.60 | 40×5, 50×5, 60×38 | `acff0d328fca2e73` | — |
+| V5: 00:00 0.40, 02:00 0.55 (= 00:00 0.40, 02:00 0.55, 03:00 0.55) | 40×4, 55×44 | `b692201fbdc3d38e` | — |
+
+("40×4" = the value 40 repeated in 4 consecutive slots.)

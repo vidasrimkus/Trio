@@ -135,21 +135,27 @@ enum RemoteBasalSchedule {
 
     // MARK: - Hash and daily total
 
-    /// Identifies a schedule independently of how it is formatted. Canonical form: for every entry in
-    /// start order `"<minutes from midnight>:<rate in hundredths>"`, joined with ";"; hash = lowercase hex of
-    /// the first 8 bytes of SHA-256 over its UTF-8 bytes. LoopFollow computes the same (vectors in
-    /// CUSTOMIZATIONS.md).
+    /// Identifies a schedule by what it delivers, not by how it is split into entries. Canonical form: the
+    /// rate in force at each of the 48 half-hours 00:00, 00:30, … 23:30 (the entry with the latest start at or
+    /// before that time; before the first entry, the last entry — a daily schedule wraps), in whole hundredths
+    /// of U/h (rate × 100 rounded half-up), joined with ";". Hash = lowercase hex of the first 8 bytes of SHA-256
+    /// over its UTF-8 bytes. LoopFollow computes the same (vectors in CUSTOMIZATIONS.md §7).
     static func hash(_ entries: [BasalProfileEntry]) -> String {
-        let canonical = entries
-            .sorted { $0.minutes < $1.minutes }
-            .map { entry -> String in
-                var scaled = entry.rate * 100
-                var rounded = Decimal()
-                NSDecimalRound(&rounded, &scaled, 0, .plain)
-                return "\(entry.minutes):\(NSDecimalNumber(decimal: rounded).intValue)"
-            }
-            .joined(separator: ";")
-        return SHA256.hash(data: Data(canonical.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        let sorted = entries.sorted { $0.minutes < $1.minutes }
+        guard let lastEntry = sorted.last else { return hashOf(canonical: "") }
+        let slots = (0 ..< 48).map { slot -> String in
+            let minute = slot * 30
+            let entry = sorted.last(where: { $0.minutes <= minute }) ?? lastEntry
+            var scaled = entry.rate * 100
+            var rounded = Decimal()
+            NSDecimalRound(&rounded, &scaled, 0, .plain)
+            return "\(NSDecimalNumber(decimal: rounded).intValue)"
+        }
+        return hashOf(canonical: slots.joined(separator: ";"))
+    }
+
+    private static func hashOf(canonical: String) -> String {
+        SHA256.hash(data: Data(canonical.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Units per day the schedule delivers.
