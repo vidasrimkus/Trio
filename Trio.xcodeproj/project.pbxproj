@@ -348,6 +348,7 @@
 		41740E936552456AAC0EDCC3 /* MaxIOBSuggestionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3919BBB515547118D684CC2 /* MaxIOBSuggestionTests.swift */; };
 		41740E936552456AAC0EDBC3 /* DosingModeMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */; };
 		F952E47E415A8EC860E7562B /* RemoteDosingModeCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */; };
+		28385A10737ED113B3E17ED4 /* RemoteBasalScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */; };
 		45252C95D220E796FDB3B022 /* ConfigEditorDataFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A87AA037BD079BA3528BA /* ConfigEditorDataFlow.swift */; };
 		45717281F743594AA9D87191 /* ConfigEditorRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 920DDB21E5D0EB813197500D /* ConfigEditorRootView.swift */; };
 		49090A8D2E9FE8D200D0F5DB /* GarminWatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49090A8C2E9FE8D200D0F5DB /* GarminWatchSettings.swift */; };
@@ -797,6 +798,8 @@
 		DD32CF9C2CC82499003686D6 /* TrioRemoteControl+TempTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD32CF9B2CC82495003686D6 /* TrioRemoteControl+TempTarget.swift */; };
 		DD32CF9E2CC824C5003686D6 /* TrioRemoteControl+Override.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD32CF9D2CC824C2003686D6 /* TrioRemoteControl+Override.swift */; };
 		D815E58D8E031D58F328770F /* TrioRemoteControl+DosingMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */; };
+		B6C396DF469F6812B39248F8 /* RemoteBasalSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */; };
+		F716A8B377D59097FBF96552 /* TrioRemoteControl+BasalSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */; };
 		DD32CFA02CC824D6003686D6 /* TrioRemoteControl+APNS.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD32CF9F2CC824D3003686D6 /* TrioRemoteControl+APNS.swift */; };
 		DD32CFA22CC824E2003686D6 /* TrioRemoteControl+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD32CFA12CC824E1003686D6 /* TrioRemoteControl+Helpers.swift */; };
 		DD3A3CE72D29C93F00AE478E /* Helper+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3A3CE62D29C93F00AE478E /* Helper+Extensions.swift */; };
@@ -1525,6 +1528,7 @@
 		B3919BBB515547118D684CC2 /* MaxIOBSuggestionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MaxIOBSuggestionTests.swift; sourceTree = "<group>"; };
 		B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DosingModeMigrationTests.swift; sourceTree = "<group>"; };
 		55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteDosingModeCommandTests.swift; sourceTree = "<group>"; };
+		FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteBasalScheduleTests.swift; sourceTree = "<group>"; };
 		B6E925122EB3932A0076D719 /* OmnipodKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = OmnipodKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B9B5C0607505A38F256BF99A /* CGMSettingsDataFlow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CGMSettingsDataFlow.swift; sourceTree = "<group>"; };
 		BA49538D56989D8DA6FCF538 /* TargetsEditorDataFlow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TargetsEditorDataFlow.swift; sourceTree = "<group>"; };
@@ -1889,6 +1893,8 @@
 		DD32CF9B2CC82495003686D6 /* TrioRemoteControl+TempTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+TempTarget.swift"; sourceTree = "<group>"; };
 		DD32CF9D2CC824C2003686D6 /* TrioRemoteControl+Override.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+Override.swift"; sourceTree = "<group>"; };
 		AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+DosingMode.swift"; sourceTree = "<group>"; };
+		3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteBasalSchedule.swift; sourceTree = "<group>"; };
+		DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+BasalSchedule.swift"; sourceTree = "<group>"; };
 		DD32CF9F2CC824D3003686D6 /* TrioRemoteControl+APNS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+APNS.swift"; sourceTree = "<group>"; };
 		DD32CFA12CC824E1003686D6 /* TrioRemoteControl+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+Helpers.swift"; sourceTree = "<group>"; };
 		DD3A3CE62D29C93F00AE478E /* Helper+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Helper+Extensions.swift"; sourceTree = "<group>"; };
@@ -3239,6 +3245,7 @@
 				B3919BBB515547118D684CC2 /* MaxIOBSuggestionTests.swift */,
 				B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */,
 				55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */,
+				FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */,
 				BD8FC0532D66186000B95AED /* TestError.swift */,
 				C39FF1EC12CF4B1EBB13BE26 /* NightscoutUploadSerializerTests.swift */,
 				6EFF860E684B4C9488D438DD /* NightscoutImportRoundTripTests.swift */,
@@ -4465,6 +4472,8 @@
 				DD32CF9F2CC824D3003686D6 /* TrioRemoteControl+APNS.swift */,
 				DD32CF9D2CC824C2003686D6 /* TrioRemoteControl+Override.swift */,
 				AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */,
+				3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */,
+				DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */,
 				DD32CF9B2CC82495003686D6 /* TrioRemoteControl+TempTarget.swift */,
 				DD32CF992CC8246F003686D6 /* TrioRemoteControl+Meal.swift */,
 				DD32CF972CC82460003686D6 /* TrioRemoteControl+Bolus.swift */,
@@ -5811,6 +5820,8 @@
 				041D1E995A6AE92E9289DC49 /* TreatmentsDataFlow.swift in Sources */,
 				DD32CF9E2CC824C5003686D6 /* TrioRemoteControl+Override.swift in Sources */,
 				D815E58D8E031D58F328770F /* TrioRemoteControl+DosingMode.swift in Sources */,
+				B6C396DF469F6812B39248F8 /* RemoteBasalSchedule.swift in Sources */,
+				F716A8B377D59097FBF96552 /* TrioRemoteControl+BasalSchedule.swift in Sources */,
 				BD249D922D42FC5300412DEB /* GlucoseSectorChart.swift in Sources */,
 				23888883D4EA091C88480FF2 /* TreatmentsProvider.swift in Sources */,
 				38E98A2D25F52DC400C0CED0 /* NSLocking+Extensions.swift in Sources */,
@@ -6052,6 +6063,7 @@
 				41740E936552456AAC0EDCC3 /* MaxIOBSuggestionTests.swift in Sources */,
 				41740E936552456AAC0EDBC3 /* DosingModeMigrationTests.swift in Sources */,
 				F952E47E415A8EC860E7562B /* RemoteDosingModeCommandTests.swift in Sources */,
+				28385A10737ED113B3E17ED4 /* RemoteBasalScheduleTests.swift in Sources */,
 				B015AFE52E500000000D7351 /* BolusSafetyValidatorTests.swift in Sources */,
 				BD8FC0712D661B0000B95AED /* TidepoolTherapySettingsTests.swift in Sources */,
 				CA03000000000000000010C2 /* AlertCatalogRegistryOmniFaultTests.swift in Sources */,

@@ -22,6 +22,11 @@ struct CommandPayload: Decodable, Sendable {
     var scheduledTime: TimeInterval?
     /// `set_dosing_mode` only: a `DosingMode` rawValue ("closed", "open", "lowGlucoseSuspend", "basalTesting").
     var dosingMode: String?
+    /// `set_basal_schedule` only: the schedule, its display name, and the hash of the schedule the sender saw as
+    /// active (RemoteBasalSchedule.hash) — the command is refused if Trio's active schedule differs.
+    var basalSchedule: [RemoteBasalSchedule.Segment]?
+    var basalScheduleName: String?
+    var expectedActiveHash: String?
     var returnNotification: ReturnNotificationInfo?
 
     /// The mode a `set_dosing_mode` command asks for, or nil when `dosing_mode` is missing or not a known mode.
@@ -60,6 +65,9 @@ struct CommandPayload: Decodable, Sendable {
         case bolusAmount = "bolus_amount"
         case scheduledTime = "scheduled_time"
         case dosingMode = "dosing_mode"
+        case basalSchedule = "basal_schedule"
+        case basalScheduleName = "basal_schedule_name"
+        case expectedActiveHash = "expected_active_hash"
         case returnNotification = "return_notification"
     }
 
@@ -102,6 +110,8 @@ struct CommandPayload: Decodable, Sendable {
             } else {
                 description += "Dosing Mode: invalid (\(dosingMode ?? "missing"))."
             }
+        case .setBasalSchedule:
+            description += "Basal Schedule: \(basalScheduleName ?? "unnamed"), \(basalSchedule?.count ?? 0) segments."
         }
 
         if let scheduledTime = scheduledTime {
@@ -126,6 +136,7 @@ extension TrioRemoteControl {
         case startOverride = "start_override"
         case cancelOverride = "cancel_override"
         case setDosingMode = "set_dosing_mode"
+        case setBasalSchedule = "set_basal_schedule"
 
         var description: String {
             switch self {
@@ -143,6 +154,8 @@ extension TrioRemoteControl {
                 return "Cancel Override"
             case .setDosingMode:
                 return "Set Dosing Mode"
+            case .setBasalSchedule:
+                return "Set Basal Schedule"
             }
         }
     }

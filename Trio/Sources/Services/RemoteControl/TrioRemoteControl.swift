@@ -86,6 +86,8 @@ class TrioRemoteControl: Injectable {
             await handleCancelOverrideCommand(commandPayload)
         case .setDosingMode:
             await handleSetDosingModeCommand(commandPayload)
+        case .setBasalSchedule:
+            await handleSetBasalScheduleCommand(commandPayload)
         }
     }
 }

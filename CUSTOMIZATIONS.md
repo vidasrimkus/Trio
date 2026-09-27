@@ -51,6 +51,7 @@ Nothing else in the workflow changed. Run it with
 | LoopFollow → Trio | `vidasrimkus/LoopFollow` sends `command_type: "set_dosing_mode"` with `dosing_mode` = a `DosingMode` rawValue: `closed`, `open`, `lowGlucoseSuspend`, `basalTesting`. Encrypted exactly like the other TRC commands. Visible alert on the Trio phone: "Remote Command: Dosing Mode → <mode>". |
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
+| LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
 
 If any of these contracts changes, `vidasrimkus/LoopFollow` and `t1d-monitor` must change too.
 
@@ -106,3 +107,44 @@ temp at the same moment (`basalTesting.automation == .hypoSuspendOnly`, so the l
 unordered temp-basal commands to the pump; a protective zero temp could be overwritten. Decision: Trio's
 behaviour stays as upstream; the remote change is confirmed by the Trio push notification, and the new
 mode reaches Nightscout with the next regular cycle.
+
+## 7. Remote command `set_basal_schedule` — Dana only (branch `feat/remote-basal-schedule`)
+
+**Purpose.** Write a whole basal schedule to the pump and make it Trio's basal profile from LoopFollow.
+Named profiles live in LoopFollow; Trio keeps its single `settings/basal_profile.json` as upstream.
+
+**Files.** `Trio/Sources/Services/RemoteControl/RemoteBasalSchedule.swift` (new: pure rules),
+`TrioRemoteControl+BasalSchedule.swift` (new: handler), `CommandPayload.swift` (`setBasalSchedule`,
+`basal_schedule`, `basal_schedule_name`, `expected_active_hash`), `TrioRemoteControl.swift` (switch),
+`project.pbxproj`, `TrioTests/RemoteBasalScheduleTests.swift`. No change to `APSManager`, `NightscoutManager`,
+DanaKit or OmnipodKit.
+
+**Order in the handler.**
+1. Incomplete payload → rejected.
+2. Pre-checks: pump must be a `DanaKitPumpManager` (Omnipod DASH → rejected with the explanation that the
+   pod briefly stops all delivery and could not be resumed remotely; any other pump → rejected); not
+   suspended/suspending/resuming; no bolus in progress (`bolusTrigger`); no loop running (`isLooping`).
+   Nothing is queued — the sender retries.
+3. Validation (`RemoteBasalSchedule.validate`): name 1–30 characters, no quotes or control characters;
+   1–24 segments; first at 00:00; strictly increasing; **whole hours only** (`HH:00`); rate > 0 and ≤ Max
+   Basal; rate a whole number of hundredths that is in the pump's `supportedBasalRates`; for a Dana,
+   `UInt16(Double(rate) * 100)` must equal the hundredths (the Decimal → Double path the editor uses, then
+   DanaKit's encoding) — otherwise rejected.
+4. New schedule's hash == active hash → "Already active: X", nothing written (re-sending is safe).
+5. `expected_active_hash` ≠ active hash → rejected ("the active basal schedule changed since it was read").
+6. Write through the Basal Profile editor's own path, `BasalProfileEditor.Provider.saveProfile` (pump first,
+   local file only on success). On failure nothing is saved in Trio and the error reads
+   "Pompa galėjo priimti dalį pakeitimų. Pakartokite tą patį aktyvavimą arba patikrinkite pompą." — the
+   expected hash is still the old active one, so the same command can simply be sent again.
+7. On success the editor's follow-up: `basalProfileDidChange` broadcast, Nightscout `uploadProfiles`, Tidepool
+   settings; plus a Nightscout Note "Basal schedule activated remotely: X (a → b U/d, <hash>)".
+
+**Schedule hash (shared with LoopFollow).** For every entry in start order
+`"<minutes from midnight>:<rate in hundredths of U/h>"`, joined with `;`; hash = lowercase hex of the first
+8 bytes of SHA-256 over the UTF-8 bytes. Vectors (tested in `RemoteBasalScheduleTests`):
+
+| Schedule | Canonical string | Hash | Daily total |
+|---|---|---|---|
+| 00:00 0.40, 02:00 0.55, 03:00 0.55, 05:00 0.60, 06:00 0.60, 08:00 0.60, 10:00 0.70, 13:00 0.40, 19:00 0.45 | `0:40;120:55;180:55;300:60;360:60;480:60;600:70;780:40;1140:45` | `fd950334d8df0b65` | 12.2 U |
+| 00:00 1.00 | `0:100` | `cb753f988e32a89d` | 24 U |
+| 00:00 0.35, 07:00 1.20, 22:00 0.45 | `0:35;420:120;1320:45` | `aa5480f602dbc4d4` | — |
