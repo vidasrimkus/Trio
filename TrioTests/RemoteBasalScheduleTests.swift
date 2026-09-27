@@ -75,14 +75,17 @@ import Testing
         #expect((try? validate([seg("00:00", "0.45")], rates: rates005, dana: false).get()) != nil)
     }
 
-    @Test("Rates the Dana would store differently are rejected", arguments: ["0.29", "0.57", "1.15", "2.05", "2.30"])
+    @Test("Rates the Dana would store differently are rejected", arguments: ["0.29", "1.15", "2.05", "2.30"])
     func danaTruncation(rate: String) {
         #expect(throws: R.Rejection.self) { try validate([seg("00:00", rate)], maxBasal: 5).get() }
         // The same rate is fine for a pump without Dana's encoding (where the table allows it).
         #expect((try? validate([seg("00:00", rate)], maxBasal: 5, dana: false).get()) != nil)
     }
 
-    @Test("Everyday Dana rates pass", arguments: ["0.4", "0.45", "0.55", "0.6", "0.7", "1.0", "1.1", "1.2"])
+    /// 0.57 truncates when computed with a literal Double (0.57 * 100 = 56.999…), but Trio's Decimal → Double
+    /// path (Double(truncating: Decimal as NSNumber)) yields a value that encodes to 57 — observed in CI — so it
+    /// passes; the rule follows the real path, not the literal.
+    @Test("Everyday Dana rates pass", arguments: ["0.4", "0.45", "0.55", "0.57", "0.6", "0.7", "1.0", "1.1", "1.2"])
     func danaGoodRates(rate: String) {
         #expect((try? validate([seg("00:00", rate)]).get()) != nil)
     }
