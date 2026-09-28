@@ -86,7 +86,8 @@ Two pumps are used and swapped from time to time: **Dana** (DanaKit, `loopandlea
    from advancing, so every later hour gets the previous rate on the pump. Trio's editor allows a
    30-minute grid, so this can happen from the phone too.
 4. **Rates are encoded as `UInt16(rate * 100)`** (`DanaBasalSetProfileRate.swift`), which truncates some
-   values by 0.01 U/h (e.g. 0.29 → 0.28; at 0.05 steps 1.15, 2.05, 2.30, 2.55, 4.10, 4.35, 4.60, 4.85).
+   values by 0.01 U/h (e.g. 0.29 → 0.28; at 0.05 steps 1.15, 2.05, 2.30, 2.55, 4.10, 4.35, 4.60, 4.85). The full
+   list for 0.01–5.00 U/h on Trio's Decimal path (65 values) is the Dana truncation vector in §7.
 5. Omnipod DASH, by contrast, stops all delivery (`cancelDelivery(.all)`) before programming a new schedule
    (`OmniPumpManager.swift:1834-1901`); a broken connection between the two steps leaves the pod suspended
    until it is resumed on the phone.
@@ -163,5 +164,19 @@ Works for any stored schedule, including one with 30-minute segments saved on th
 | V3: 00:00 0.35, 07:00 1.20, 22:00 0.45 | 35×14, 120×30, 45×4 | `eabd566dccabc3e6` | — |
 | V4 (30-min segment): 00:00 0.40, 02:30 0.50, 05:00 0.60 | 40×5, 50×5, 60×38 | `acff0d328fca2e73` | — |
 | V5: 00:00 0.40, 02:00 0.55 (= 00:00 0.40, 02:00 0.55, 03:00 0.55) | 40×4, 55×44 | `b692201fbdc3d38e` | — |
+| V6 (not starting at 00:00 — wraps; `set_basal_schedule` validation refuses it): 06:00 0.50, 20:00 0.30 | 30×12, 50×28, 30×8 | `69f813145c518801` | — |
 
 ("40×4" = the value 40 repeated in 4 consecutive slots.)
+
+**Dana truncation vector (shared with LoopFollow).** Every rate from 0.01 to 5.00 U/h (1–500 hundredths), built as a
+Decimal from its "D.DD" string, converted with `Double(truncating: rate as NSNumber)` (Trio's `Double(Decimal)`
+extension, `Helpers/Decimal+Extensions.swift`) and encoded as DanaKit does, `UInt16(value × 100)`. These 65
+hundredths come out different and are refused for a Dana (determined in CI on the real Foundation path; a plain
+Double literal differs — e.g. 0.57 is truncated as a literal but not on this path):
+
+`7, 14, 28, 29, 33, 56, 58, 66, 87, 91, 107, 111, 112, 115, 116, 132, 157, 174, 179, 182, 199, 205, 207, 214, 222,
+224, 230, 232, 239, 247, 249, 255, 264, 289, 314, 323, 333, 339, 348, 358, 364, 373, 383, 389, 398, 403, 410, 414,
+419, 423, 428, 435, 439, 444, 448, 453, 460, 464, 469, 473, 478, 485, 489, 494, 498`
+
+Trio `RemoteBasalScheduleTests.danaTruncationTable` runs the full validation over all 500 and LoopFollow
+`BasalProfileTests.danaTruncationTable` its own check; both must equal this list.

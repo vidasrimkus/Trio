@@ -34,7 +34,8 @@ extension TrioRemoteControl {
             pump: kind,
             suspended: suspended,
             bolusing: deviceDataManager.bolusTrigger.value != .noBolus,
-            looping: aps?.isLooping.value ?? false
+            // No APSManager → cannot tell whether a loop runs → treat it as running and refuse (fail closed).
+            looping: aps?.isLooping.value ?? true
         ) {
             await logError("Command rejected: \(rejection.text)", payload: payload)
             return

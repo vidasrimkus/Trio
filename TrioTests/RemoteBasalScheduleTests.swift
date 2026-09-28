@@ -82,6 +82,23 @@ import Testing
         #expect((try? validate([seg("00:00", rate)], maxBasal: 5, dana: false).get()) != nil)
     }
 
+    /// Shared with LoopFollow (CUSTOMIZATIONS.md §7): every rate 0.01–5.00 U/h whose Decimal → Double(truncating:)
+    /// → UInt16(× 100) encoding differs from its hundredths, i.e. what a Dana would store differently.
+    static let danaTruncatedCents: [Int] = [
+        7, 14, 28, 29, 33, 56, 58, 66, 87, 91, 107, 111, 112, 115, 116, 132, 157, 174, 179, 182, 199, 205, 207, 214,
+        222, 224, 230, 232, 239, 247, 249, 255, 264, 289, 314, 323, 333, 339, 348, 358, 364, 373, 383, 389, 398, 403,
+        410, 414, 419, 423, 428, 435, 439, 444, 448, 453, 460, 464, 469, 473, 478, 485, 489, 494, 498,
+    ]
+
+    @Test("Dana truncation table 0.01–5.00 U/h matches the shared vector") func danaTruncationTable() {
+        var rejected: [Int] = []
+        for cents in 1 ... 500 {
+            let rate = String(format: "%d.%02d", cents / 100, cents % 100)
+            if (try? validate([seg("00:00", rate)], maxBasal: 5, dana: true).get()) == nil { rejected.append(cents) }
+        }
+        #expect(rejected == Self.danaTruncatedCents)
+    }
+
     /// 0.57 truncates when computed with a literal Double (0.57 * 100 = 56.999…), but Trio's Decimal → Double
     /// path (Double(truncating: Decimal as NSNumber)) yields a value that encodes to 57 — observed in CI — so it
     /// passes; the rule follows the real path, not the literal.
@@ -110,6 +127,13 @@ import Testing
         // Order-independent and formatting-independent.
         #expect(R.hash(Array(child.reversed())) == "5c367b5397636149")
         #expect(R.hash(entries([(0, "1.00")])) == "946f8ef5ec7fc61e")
+    }
+
+    @Test("V6: a schedule not starting at 00:00 wraps; hash defined, validation refuses it") func notStartingAtMidnight() {
+        // 06:00 0.50, 20:00 0.30 → 00:00–05:30 take the last entry (0.30): 30×12, 50×28, 30×8.
+        #expect(R.hash(entries([(360, "0.5"), (1200, "0.3")])) == "69f813145c518801")
+        #expect(R.hash(entries([(1200, "0.3"), (360, "0.5")])) == "69f813145c518801")
+        #expect(throws: R.Rejection.self) { try validate([seg("06:00", "0.5"), seg("20:00", "0.3")]).get() }
     }
 
     @Test("Hash depends on the schedule, not on how it is split") func hashIgnoresSplitting() {
