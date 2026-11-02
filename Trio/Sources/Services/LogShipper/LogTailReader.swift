@@ -37,10 +37,13 @@ struct LogTailReader {
         /// The offset to continue from when the server accepted this batch up to `accepted`
         /// (≥ `to` means all of it). A partial accept is pulled back to the end of the last
         /// complete line, so the next batch never starts mid-line; nil when not even one line.
+        /// A batch that is itself a fragment of an over-long line (no newline at all) may continue
+        /// from any accepted byte.
         func lineAlignedOffset(upTo accepted: Int) -> Int? {
             if accepted >= to { return to }
             let count = accepted - from
             guard count > 0 else { return nil }
+            if !data.contains(0x0A) { return from + count }
             let prefix = data.prefix(count)
             guard let newline = prefix.lastIndex(of: 0x0A) else { return nil }
             return from + (newline - data.startIndex) + 1

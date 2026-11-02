@@ -209,8 +209,8 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 
 **Behaviour.**
 - Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure) → shipment 10 s later (lets
-  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 25 s
-  later (inside the ~30 s of background time iOS grants); if a loop is running at that moment it steps aside and the
+  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 15 s
+  later (15 s + the 15 s request fit the ~30 s of background time iOS grants); if a loop is running at that moment it steps aside and the
   loop end ships the complete cycle, otherwise it ships (pump unreachable, no loop). At most once per minute (a request
   that comes sooner, or while a shipment runs, is deferred, never dropped). The background task is taken before the
   delay, only when the network is reachable; a running shipment is never cancelled. The loop never waits for it.
@@ -219,8 +219,10 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 - The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the
   phone's own rotation drops it (24–48 h), after which the next batch carries `gap_before: true`.
 - Responses: 200 moves the offsets (a 2xx that accepts none of the sent batches counts as a failure); 401/403 pauses
-  until settings are saved again; 413 halves the batch limit (floor 64 KB; doubles back towards 1 MB with every
-  success and resets on Save); 429/5xx/network → backoff 5 → 60 min (`Retry-After` honoured). First install ships
+  until settings are saved again; 413 halves the batch limit (floor 64 KB; doubles back towards 1 MB after three
+  successful shipments in a row, resets on Save); 429/5xx → backoff 5 → 60 min (`Retry-After` honoured, seconds or
+  HTTP date). A transport error (no route, request cut by iOS suspending the process) is only recorded — no backoff,
+  the next trigger retries. First install ships
   from the start of the current day's files. A rotated (`_prev`) file is shipped to its last byte even without a
   trailing newline.
 - Trio's log gets one line only on state changes (enabled/disabled, token refused, backoff entered/left, 413).
@@ -236,7 +238,8 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 - `uploadNoteTreatment` does not retry: a Note sent while offline is lost. The same line is in Trio's log, which
   the server extracts into `log_events`.
 - iOS gives no guaranteed background time; the real cadence shows in the server's `from`/`to` continuity. A request
-  that would have to wait more than 25 s (inside the 60 s minimum interval) is dropped, the next trigger ships.
+  that would have to wait more than 15 s (inside the 60 s minimum interval) is dropped, the next trigger ships; one
+  that waited for a running shipment runs right after it regardless of the interval.
 - Which error belongs to a failed manual bolus is a timing heuristic (`lastError` held 3 s for `bolusDidFail()`, or
   the most recent pump error within 30 s): a loop error in that window can be named instead. The exact fix is an
   `error` parameter on `BolusFailureObserver.bolusDidFail()` in `APSManager` — rule 2, decision: not done.

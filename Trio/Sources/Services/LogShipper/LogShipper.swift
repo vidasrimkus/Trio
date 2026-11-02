@@ -178,12 +178,12 @@ final class BaseLogShipper: LogShipper, Injectable {
         static let minInterval: TimeInterval = 60
         /// After a loop ends: lets DanaKit's log writer (background queue) flush the cycle's last lines.
         static let settleDelay: TimeInterval = 10
-        /// After a glucose store: inside the ~30 s of background time iOS grants. If a loop is
-        /// running when it fires, it steps aside (the loop end ships); otherwise it ships.
-        static let fallbackDelay: TimeInterval = 25
+        /// After a glucose store: delay + request must fit in the ~30 s of background time iOS
+        /// grants. If a loop is running when it fires, it steps aside (the loop end ships).
+        static let fallbackDelay: TimeInterval = 15
         /// A deferred request that could not start inside the background grant is dropped
         /// (the next trigger ships) rather than slept through with the process suspended.
-        static let maxDelay: TimeInterval = 25
+        static let maxDelay: TimeInterval = 15
         static let requestTimeout: TimeInterval = 15
         static let defaultLimit = 1_048_576
         static let minimumLimit = 65536
@@ -308,8 +308,9 @@ final class BaseLogShipper: LogShipper, Injectable {
     // MARK: - Scheduling
 
     /// `force` (Save / Send now) skips the interval, the backoff and the auth pause — never the
-    /// enabled flag: nothing leaves the phone while "Send logs" is off.
-    private func requestShipment(force: Bool, delay: TimeInterval) {
+    /// enabled flag: nothing leaves the phone while "Send logs" is off. `rerun` is the request
+    /// that waited for a running shipment: it skips the interval too (it was already deferred).
+    private func requestShipment(force: Bool, delay: TimeInterval, rerun: Bool = false) {
         guard defaults.bool(forKey: Config.enabledKey) else { return }
         let now = Date()
         var delay = delay
@@ -317,23 +318,24 @@ final class BaseLogShipper: LogShipper, Injectable {
             if !force {
                 if authFailed { return false }
                 if let until = backoffUntil, until > now { return false }
-                // Too soon after the last shipment: defer to the end of the interval, as long as
-                // that still fits in the background grant.
-                delay = max(delay, lastAttempt.addingTimeInterval(Config.minInterval).timeIntervalSince(now))
-                if delay > Config.maxDelay { return false }
+                if !rerun {
+                    // Too soon after the last shipment: defer to the end of the interval, as long
+                    // as that still fits in the background grant.
+                    delay = max(delay, lastAttempt.addingTimeInterval(Config.minInterval).timeIntervalSince(now))
+                    if delay > Config.maxDelay { return false }
+                }
             }
             let due = now.addingTimeInterval(delay)
             if pendingShipment != nil {
                 // A shipment that is already running is never cancelled: the request runs after
                 // it. A sleeping one is replaced only by an earlier (or a forced) request, so a
-                // loop end wins over the fallback.
+                // loop end wins over the fallback; one whose due time has passed was suspended
+                // with the process and may be replaced too.
                 if !sleeping {
                     rerunRequested = (rerunRequested ?? false) || force
                     return false
                 }
-                // A sleeping task whose due time has passed was suspended with the process; it
-                // may be replaced like any later one.
-                guard force || due < max(pendingDue, now) else { return false }
+                guard force || due < pendingDue || pendingDue < now else { return false }
                 pendingShipment?.cancel()
             }
             let token = UUID()
@@ -395,7 +397,7 @@ final class BaseLogShipper: LogShipper, Injectable {
             return rerun
         }
         if let force = rerun {
-            requestShipment(force: force, delay: force ? 0 : Config.settleDelay)
+            requestShipment(force: force, delay: force ? 0 : Config.settleDelay, rerun: true)
         }
     }
 
@@ -485,7 +487,11 @@ final class BaseLogShipper: LogShipper, Injectable {
                 body: data
             )
         } catch {
-            outcome = .retryLater(after: nil, message: error.localizedDescription)
+            // Transport errors are mostly ours (iOS suspended the process mid-request, no route):
+            // record them, but do not punish the server with a backoff — the next trigger retries.
+            publishStatus { $0.lastError = error.localizedDescription }
+            os_log("Request failed: %{public}@", log: log, type: .error, error.localizedDescription)
+            return
         }
 
         apply(outcome, shipments: shipments, states: &states, sentBytes: body.count)

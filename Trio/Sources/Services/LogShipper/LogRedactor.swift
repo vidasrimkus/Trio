@@ -17,31 +17,31 @@ enum LogRedactor {
     static let pairingLinesAfter = 150
 
     private struct Rule {
-        /// Cheap lowercase substring test before the regex runs (almost every line fails it).
-        let needle: String
+        /// Cheap lowercase substring tests before the regex runs (almost every line fails them).
+        let needles: [String]
         let regex: NSRegularExpression
         let template: String
 
-        init(needle: String, _ pattern: String, _ template: String) {
-            self.needle = needle
+        init(needles: [String], _ pattern: String, _ template: String) {
+            self.needles = needles
             regex = try! NSRegularExpression(pattern: pattern)
             self.template = template
         }
 
         func apply(to line: String, lowercased: String) -> String {
-            guard lowercased.contains(needle) else { return line }
+            guard needles.contains(where: { lowercased.contains($0) }) else { return line }
             let range = NSRange(line.startIndex..., in: line)
             return regex.stringByReplacingMatches(in: line, range: range, withTemplate: template)
         }
     }
 
     private static let valueRules: [Rule] = [
-        Rule(needle: "pairing", #"(?i)((?:random )?pairing ?key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
-        Rule(needle: "sync key", #"(?i)(random sync key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
-        Rule(needle: "data: ", #"(?i)((?:Sending pairing request|Sending Passkey check|Passkey request failed)[^\n]*?data: )[0-9A-Fa-f]+"#, "$1\(redacted)"),
-        Rule(needle: "device token", #"(Device token updated: )\S+"#, "$1\(redacted)"),
-        Rule(needle: "=", #"((?i:token|secret|api[-_]?secret|password|passkey|pin)=)[^&\s"']+"#, "$1\(redacted)"),
-        Rule(needle: "bearer ", #"((?i:authorization: bearer )|(?i:bearer ))[A-Za-z0-9._~+/=-]{8,}"#, "$1\(redacted)")
+        Rule(needles: ["pairing"], #"(?i)((?:random )?pairing ?key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
+        Rule(needles: ["sync key"], #"(?i)(random sync key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
+        Rule(needles: ["pairing request", "passkey"], #"(?i)((?:Sending pairing request|Sending Passkey check|Passkey request failed)[^\n]*?data: )[0-9A-Fa-f]+"#, "$1\(redacted)"),
+        Rule(needles: ["device token"], #"(Device token updated: )\S+"#, "$1\(redacted)"),
+        Rule(needles: ["token=", "secret=", "password=", "passkey=", "pin="], #"((?i:token|secret|api[-_]?secret|password|passkey|pin)=)[^&\s"']+"#, "$1\(redacted)"),
+        Rule(needles: ["bearer "], #"((?i:authorization: bearer )|(?i:bearer ))[A-Za-z0-9._~+/=-]{8,}"#, "$1\(redacted)")
     ]
 
     private static let pairingMarkers = [
@@ -54,7 +54,7 @@ enum LogRedactor {
         "security keys"
     ]
 
-    private static let pairingHex = Rule(needle: "data: ", #"(?i)(data: )[0-9A-Fa-f]{2,}"#, "$1\(redactedPairing)")
+    private static let pairingHex = Rule(needles: ["data: "], #"(?i)(data: )[0-9A-Fa-f]{2,}"#, "$1\(redactedPairing)")
 
     static func redact(_ text: String) -> String {
         var lines = text.components(separatedBy: "\n")

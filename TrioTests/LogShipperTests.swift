@@ -416,6 +416,9 @@ import Testing
         #expect(batch.lineAlignedOffset(upTo: 108) == 108) // exactly after "cdė\n"
         #expect(batch.lineAlignedOffset(upTo: 102) == nil) // not even one line
         #expect(batch.lineAlignedOffset(upTo: 100) == nil)
+        // A fragment of an over-long line (no newline at all) may continue from any accepted byte.
+        let fragment = LogTailReader.Batch(fileId: "1:2", from: 100, to: 104, gapBefore: false, data: Data("abcd".utf8))
+        #expect(fragment.lineAlignedOffset(upTo: 102) == 102)
         #expect(LogShipperResponse.retryAfterInterval("nan") == nil)
         #expect(LogShipperResponse.retryAfterInterval("inf") == nil)
     }

@@ -92,12 +92,10 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
                 return
             }
             // A second pairable error inside the hold (e.g. the loop's own failure right after a
-            // bolus error) goes out at once as pump_error; the held one stays, because a pending
-            // bolusDidFail() belongs to the earlier error.
-            if let previous = self.pending {
-                if previous.text != text {
-                    self.emit(.pumpError(error: text))
-                }
+            // bolus error) goes out at once as pump_error (the throttle dedupes the same text);
+            // the held one stays, because a pending bolusDidFail() belongs to the earlier error.
+            if self.pending != nil {
+                self.emit(.pumpError(error: text))
                 return
             }
             self.pending = (text, Date())
