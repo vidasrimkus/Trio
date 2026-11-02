@@ -238,3 +238,14 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 
 **After installing a build with this:** open Settings → Log Shipper, enter URL and token, enable, press Send now,
 check the status rows and the server's `log_batches`. Then confirm pump, CGM, loop and dosing mode as for any build.
+
+## 9. Submodule `LibreCRKit` — URL moved to our own fork
+
+On 2026-11-02 `https://github.com/loopandlearn/LibreCRKit.git` (the URL in upstream v1.0.1's `.gitmodules`)
+returned 404 on GitHub, so every checkout with submodules — `unit_tests.yml` and `4. Build Trio` — fails before
+compiling. Upstream v1.0.2 (2026-10-07) replaced LibreCRKit with RoundWhiteDiscKit; our base is still v1.0.1.
+
+Fix: `vidasrimkus/LibreCRKit` is a fork of `pov-it/LibreCRKit` (branch `trio`, head = the commit Trio pins,
+`24d5617f703089a36f4261c3ab84f2ac505a8f1a`, same SHA → identical content). `.gitmodules` points there; the pinned
+commit is unchanged. First done on `feature/log-shipper`; **`main` needs the same one-line `.gitmodules` change
+before the next build.** Goes away with the upgrade to v1.0.2 (separate task).
