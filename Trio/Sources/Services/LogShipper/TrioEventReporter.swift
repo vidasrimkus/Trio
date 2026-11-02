@@ -24,14 +24,17 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
 
     enum Config {
         static let throttleWindow: TimeInterval = 30 * 60
-        /// How long a `lastError` waits for a `bolusDidFail()`; the pairing window is the same value.
+        /// How long a `lastError` waits for a `bolusDidFail()` before it goes out as `pump_error`.
         static let holdInterval: TimeInterval = 3
-        static let pairingWindow: TimeInterval = holdInterval
+        /// A `bolusDidFail()` that comes later than the hold (busy main thread) still names the
+        /// most recent error if it is this fresh; the `pump_error` already sent stays.
+        static let pairingWindow: TimeInterval = 30
     }
 
     private let queue = DispatchQueue(label: "BaseTrioEventReporter.queue")
     private var throttle = EventThrottle(window: Config.throttleWindow)
     private var pending: (text: String, at: Date)?
+    private var lastError: (text: String, at: Date)?
     private var generation = 0
     private var subscriptions = Set<AnyCancellable>()
 
@@ -54,10 +57,12 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
     func bolusDidFail() {
         queue.async {
             let now = Date()
-            if let pending = self.pending, now.timeIntervalSince(pending.at) <= Config.pairingWindow {
+            if let pending = self.pending {
                 self.pending = nil
                 self.generation += 1
                 self.emit(.bolusFailed(kind: .manual, error: pending.text))
+            } else if let last = self.lastError, now.timeIntervalSince(last.at) <= Config.pairingWindow {
+                self.emit(.bolusFailed(kind: .manual, error: last.text))
             } else {
                 self.emit(.bolusFailed(kind: .manual, error: nil))
             }
@@ -75,6 +80,7 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
                 self.emit(.pumpError(error: previous.text))
             }
             self.pending = (text, Date())
+            self.lastError = self.pending
             self.generation += 1
             let generation = self.generation
             self.queue.asyncAfter(deadline: .now() + Config.holdInterval) {

@@ -87,7 +87,8 @@ struct LogTailReader {
                     gap = true
                 }
                 if state.offset < previous.size {
-                    return read(from: previousURL, info: previous, state: state, gap: gap, limit: limit)
+                    // Nothing writes to the rotated file any more: its last line never gains a newline.
+                    return read(from: previousURL, info: previous, state: state, gap: gap, limit: limit, final: true)
                 }
                 state = StreamState(fileId: current.id, offset: 0)
             } else {
@@ -101,10 +102,10 @@ struct LogTailReader {
             gap = true
         }
 
-        return read(from: currentURL, info: current, state: state, gap: gap, limit: limit)
+        return read(from: currentURL, info: current, state: state, gap: gap, limit: limit, final: false)
     }
 
-    private func read(from url: URL, info: FileInfo, state: StreamState, gap: Bool, limit: Int) -> Result {
+    private func read(from url: URL, info: FileInfo, state: StreamState, gap: Bool, limit: Int, final: Bool) -> Result {
         // Nothing to ship yet: keep the (normalized) state and remember the gap for the next batch.
         let waiting = Result(batch: nil, stateAfterSuccess: StreamState(fileId: state.fileId, offset: state.offset, gapPending: gap))
 
@@ -123,7 +124,7 @@ struct LogTailReader {
 
         if let newline = data.lastIndex(of: 0x0A) {
             data = data.prefix(newline - data.startIndex + 1)
-        } else if data.count < limit {
+        } else if data.count < limit, !final {
             // A line still being written — wait for its newline.
             return waiting
         }

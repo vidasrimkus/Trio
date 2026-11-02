@@ -134,6 +134,23 @@ import Testing
         #expect(fresh.batch?.gapBefore == false)
     }
 
+    @Test("A rotated file ending without a newline is shipped to its end") func rotatedFileWithoutNewline() {
+        let logs = Logs()
+        logs.create("day1-a\n")
+        let shipped = logs.reader.next(state: LogTailReader.StreamState(), limit: 1 << 20)
+        logs.append("day1-partial") // app killed mid-write, then the day rolled over
+        logs.rotate(newContent: "day2-a\n")
+        let id2 = LogTailReader.info(of: logs.current)!.id
+
+        let rest = logs.reader.next(state: shipped.stateAfterSuccess, limit: 1 << 20)
+        #expect(text(rest.batch) == "day1-partial")
+        #expect(rest.batch?.to == 19)
+
+        let fresh = logs.reader.next(state: rest.stateAfterSuccess, limit: 1 << 20)
+        #expect(fresh.batch?.fileId == id2)
+        #expect(text(fresh.batch) == "day2-a\n")
+    }
+
     @Test("A missed rotation is a gap") func missedRotation() {
         let logs = Logs()
         logs.create("x\n")

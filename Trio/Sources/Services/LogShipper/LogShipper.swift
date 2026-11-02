@@ -30,12 +30,6 @@ protocol LogShipper: AnyObject {
     func shipNow()
 }
 
-extension Notification.Name {
-    /// Fallback trigger: posted by `FetchGlucoseManager` after every glucose store, so shipping goes
-    /// on even while no loop starts. The regular trigger is the end of a loop cycle.
-    static let logShipperActivity = Notification.Name("vidas.LogShipper.activity")
-}
-
 // MARK: - Wire format
 
 struct LogShipmentPayload: Encodable {
@@ -160,14 +154,18 @@ final class BaseLogShipper: LogShipper, Injectable {
         static let installIdKey = "LogShipper.installId"
         /// Loop cycles are 5 min; a little less so a slightly early cycle still ships.
         static let minInterval: TimeInterval = 4.5 * 60
-        /// Lets DanaKit's log writer (background queue) flush the cycle's last lines first.
+        /// After a loop ends: lets DanaKit's log writer (background queue) flush the cycle's last lines.
         static let settleDelay: TimeInterval = 10
+        /// After a glucose store: long enough for the loop that normally follows the reading to end
+        /// and replace this with the earlier loop-end shipment; ships anyway when no loop runs.
+        static let fallbackDelay: TimeInterval = 90
         static let requestTimeout: TimeInterval = 15
         static let defaultLimit = 1_048_576
         static let minimumLimit = 65536
     }
 
     @Injected() private var apsManager: APSManager!
+    @Injected() private var glucoseStorage: GlucoseStorage!
     @Injected() private var keychain: Keychain!
     @Injected() private var reachabilityManager: ReachabilityManager!
 
@@ -186,16 +184,20 @@ final class BaseLogShipper: LogShipper, Injectable {
     private var subscriptions = Set<AnyCancellable>()
 
     /// All scheduling state lives behind this one lock. One shipment exists at a time: it is
-    /// `sleeping` (settle delay, may be replaced by a forced request) or shipping (never cancelled).
+    /// `sleeping` (its delay, may be replaced by an earlier or a forced request) or shipping (never
+    /// cancelled). `backoffUntil` / `authFailed` / `currentStatus` are the single source of what the
+    /// UI sees; `publishStatus` copies them out.
     private let lock = NSLock()
     private var pendingShipment: Task<Void, Never>?
     private var pendingToken = UUID()
+    private var pendingDue: Date = .distantPast
     private var sleeping = false
     private var lastAttempt: Date = .distantPast
     private var backoffInterval: TimeInterval?
     private var backoffUntil: Date?
     private var authFailed = false
     private var limit: Int
+    private var currentStatus = LogShipperStatus()
 
     init(resolver: Resolver) {
         let stored = UserDefaults.standard.integer(forKey: Config.limitKey)
@@ -214,6 +216,7 @@ final class BaseLogShipper: LogShipper, Injectable {
             ))
         ]
 
+        // Regular trigger: the end of every loop cycle, success or failure.
         apsManager.isLooping
             .dropFirst()
             .removeDuplicates()
@@ -221,8 +224,9 @@ final class BaseLogShipper: LogShipper, Injectable {
             .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
             .store(in: &subscriptions)
 
-        Foundation.NotificationCenter.default.publisher(for: .logShipperActivity)
-            .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
+        // Fallback: every glucose store, so shipping goes on while no loop starts (pump unreachable).
+        glucoseStorage.updatePublisher
+            .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.fallbackDelay) }
             .store(in: &subscriptions)
     }
 
@@ -241,12 +245,20 @@ final class BaseLogShipper: LogShipper, Injectable {
         keychain.setValue(config.url, forKey: Config.urlKey)
         keychain.setValue(config.token, forKey: Config.tokenKey)
         defaults.set(config.enabled, forKey: Config.enabledKey)
+        defaults.removeObject(forKey: Config.limitKey)
         lock.withLock {
             authFailed = false
             backoffUntil = nil
             backoffInterval = nil
+            limit = Config.defaultLimit
+            if !config.enabled, sleeping {
+                pendingShipment?.cancel()
+                pendingShipment = nil
+                sleeping = false
+                pendingToken = UUID()
+            }
         }
-        publishStatus { $0.authFailed = false; $0.backoffUntil = nil; $0.lastError = nil }
+        publishStatus { $0.lastError = nil }
         if wasEnabled != config.enabled {
             debug(.service, "LogShipper \(config.enabled ? "enabled" : "disabled")")
         }
@@ -264,6 +276,7 @@ final class BaseLogShipper: LogShipper, Injectable {
     private func requestShipment(force: Bool, delay: TimeInterval) {
         guard force || defaults.bool(forKey: Config.enabledKey) else { return }
         let now = Date()
+        let due = now.addingTimeInterval(delay)
         let scheduled: Bool = lock.withLock {
             if !force {
                 if authFailed { return false }
@@ -271,13 +284,14 @@ final class BaseLogShipper: LogShipper, Injectable {
                 if now.timeIntervalSince(lastAttempt) < Config.minInterval { return false }
             }
             if pendingShipment != nil {
-                // A sleeping shipment ships soon anyway; a forced request restarts it without the
-                // delay. A shipment that is already running is never cancelled.
-                guard sleeping, force else { return false }
+                // A shipment that is already running is never cancelled. A sleeping one is replaced
+                // only by an earlier (or a forced) request, so a loop end wins over the fallback.
+                guard sleeping, force || due < pendingDue else { return false }
                 pendingShipment?.cancel()
             }
             let token = UUID()
             pendingToken = token
+            pendingDue = due
             sleeping = true
             pendingShipment = Task { [weak self] in
                 if delay > 0 {
@@ -294,7 +308,7 @@ final class BaseLogShipper: LogShipper, Injectable {
         }
     }
 
-    /// False when this task was replaced while it slept.
+    /// False when this task was replaced or cancelled while it slept.
     private func startShipping(_ token: UUID) -> Bool {
         lock.withLock {
             guard token == pendingToken, !Task.isCancelled else { return false }
@@ -337,7 +351,10 @@ final class BaseLogShipper: LogShipper, Injectable {
             return
         }
         let config = self.config
-        guard force || config.enabled, let url = URL(string: config.url), !config.token.isEmpty else {
+        if !force, !config.enabled {
+            return // disabled while this shipment slept: nothing to report
+        }
+        guard let url = URL(string: config.url), !config.token.isEmpty else {
             publishStatus { $0.lastError = "Not configured" }
             return
         }
@@ -440,12 +457,19 @@ final class BaseLogShipper: LogShipper, Injectable {
                       shipments: shipments, states: &states, sentBytes: sentBytes)
                 return
             }
-            let leftBackoff: Bool = lock.withLock {
+            let (leftBackoff, newLimit): (Bool, Int?) = lock.withLock {
                 let had = backoffUntil != nil
                 backoffUntil = nil
                 backoffInterval = nil
                 authFailed = false
-                return had
+                // Grow back after a 413 (one doubling per success, up to the default).
+                let grown = min(Config.defaultLimit, limit * 2)
+                let changed = grown != limit
+                limit = grown
+                return (had, changed ? grown : nil)
+            }
+            if let newLimit {
+                defaults.set(newLimit, forKey: Config.limitKey)
             }
             if leftBackoff {
                 debug(.service, "LogShipper: server reachable again")
@@ -454,14 +478,12 @@ final class BaseLogShipper: LogShipper, Injectable {
                 $0.lastSuccess = Date()
                 $0.lastSentBytes = sentBytes
                 $0.lastError = nil
-                $0.backoffUntil = nil
-                $0.authFailed = false
             }
             os_log("Shipped %d batch(es), %d bytes", log: log, type: .info, advanced, sentBytes)
 
         case .unauthorized:
             lock.withLock { authFailed = true }
-            publishStatus { $0.authFailed = true; $0.lastError = "Server refused the token (401)" }
+            publishStatus { $0.lastError = "Server refused the token (401)" }
             debug(.service, "LogShipper: server refused the token; shipping paused until the settings change")
 
         case .tooLarge:
@@ -482,7 +504,7 @@ final class BaseLogShipper: LogShipper, Injectable {
                 backoffUntil = until
                 return (until, entered)
             }
-            publishStatus { $0.lastError = message; $0.backoffUntil = until }
+            publishStatus { $0.lastError = message }
             if entered {
                 debug(.service, "LogShipper: \(message); backing off")
             }
@@ -512,12 +534,15 @@ final class BaseLogShipper: LogShipper, Injectable {
         }
     }
 
-    /// Read-modify-write of `status.value` under `lock`, so concurrent updates keep each other's fields.
+    /// Mutates the status under `lock` (copying `backoffUntil` / `authFailed` from the scheduling
+    /// state so the two never disagree) and sends it after the lock is released.
     private func publishStatus(_ change: (inout LogShipperStatus) -> Void) {
-        lock.withLock {
-            var value = status.value
-            change(&value)
-            status.send(value)
+        let value: LogShipperStatus = lock.withLock {
+            change(&currentStatus)
+            currentStatus.backoffUntil = backoffUntil
+            currentStatus.authFailed = authFailed
+            return currentStatus
         }
+        status.send(value)
     }
 }

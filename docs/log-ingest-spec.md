@@ -117,7 +117,7 @@ Semantics:
 
 | Status | Body | Phone's reaction |
 |---|---|---|
-| `200` | `{"accepted":[{"stream":"trio","file_id":"1234567:1761948000","to":234567}]}` — one entry per stored batch | Offset moves to `to` (capped at the batch's own `to`). A batch missing from `accepted` is re-sent next time. |
+| `200` | `{"accepted":[{"stream":"trio","file_id":"1234567:1761948000","to":234567}]}` — one entry per batch the server stored **or already had** (§2.3) | Offset moves to `to` (capped at the batch's own `to`). A batch missing from `accepted` is re-sent next time. **A 2xx that names none of the sent batches is treated like a `5xx`** (backoff, visible error): never answer 2xx with an empty `accepted` to a request that carried batches — reject it with a 4xx/5xx instead. |
 | `401`, `403` | any | Shipping **pauses** until the settings are saved again on the phone. Rotate the token only together with the phone. |
 | `413` | any | Batch limit halves (1 MB → … → 64 KB floor), retry next cycle. Answer 413 when the raw body or the inflated JSON exceeds the limits in §4. |
 | `429`, `5xx`, anything else | optional `Retry-After: <seconds>` | Backoff 5 → 10 → 20 → 40 → 60 min (or `Retry-After`, capped at 3600). Nothing is lost: the log files are the buffer. |

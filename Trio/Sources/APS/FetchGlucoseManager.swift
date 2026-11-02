@@ -317,7 +317,6 @@ final class BaseFetchGlucoseManager: FetchGlucoseManager, Injectable {
         deviceDataManager.heartbeat(date: Date())
 
         TelemetryClient.shared.checkAndSendIfOverdueInBackground()
-        Foundation.NotificationCenter.default.post(name: .logShipperActivity, object: nil) // [vidas] LogShipper fallback trigger
 
         endBackgroundTaskSafely(&backgroundTaskID, taskName: "Glucose Store and Heartbeat Decision")
     }

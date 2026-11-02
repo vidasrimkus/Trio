@@ -202,28 +202,32 @@ instead of waiting for a "Share Logs" export, and get a Nightscout Note at once 
 | `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |
 
 Existing files: `ServiceAssembly.swift` (+2 registrations), `TrioApp.swift` (+2 eager resolves),
-`FetchGlucoseManager.swift` (+1: `NotificationCenter` post after every glucose store — fallback trigger),
 `HistoryStateModel.swift` (+1 injection), `HistoryStateModel+Insulin.swift` (`deleteInsulinFromServices` returns the
 deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: NavigationLink), `project.pbxproj`,
 `TrioTests/ContainerResolutionTests.swift` (+2), new `TrioTests/LogShipperTests.swift`.
-**No change to `APSManager`, `NightscoutManager`, `OpenAPS*`, DanaKit or OmnipodKit.**
+**No change to `APSManager`, `NightscoutManager`, `FetchGlucoseManager`, `OpenAPS*`, DanaKit or OmnipodKit.**
 
 **Behaviour.**
-- Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure), plus the glucose-store
-  notification. Shipment runs 10 s later (lets DanaKit's log queue flush), at most once per 4.5 min, only when the
-  network is reachable, inside its own `beginBackgroundTask`. The loop never waits for it.
+- Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure) → shipment 10 s later (lets
+  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 90 s
+  later, replaced by the loop-end shipment when a loop follows the reading (so a shipment never captures a half-finished
+  loop) and shipping anyway when no loop starts. At most once per 4.5 min, only when the network is reachable, inside
+  its own `beginBackgroundTask`; a running shipment is never cancelled. The loop never waits for it.
 - Both files are read from their last accepted offset (`LogTailReader`), cut at a newline, ≤ 1 MB per stream per
   shipment (a day's backlog catches up in ≈ 80 min), redacted, JSON + raw DEFLATE, `POST` with Bearer token, 15 s timeout.
 - The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the
   phone's own rotation drops it (24–48 h), after which the next batch carries `gap_before: true`.
-- Responses: 200 moves the offsets; 401/403 pauses until settings are saved again; 413 halves the batch limit
-  (floor 64 KB); 429/5xx/network → backoff 5 → 60 min (`Retry-After` honoured). First install ships from the start of
-  the current day's files.
+- Responses: 200 moves the offsets (a 2xx that accepts none of the sent batches counts as a failure); 401/403 pauses
+  until settings are saved again; 413 halves the batch limit (floor 64 KB; doubles back towards 1 MB with every
+  success and resets on Save); 429/5xx/network → backoff 5 → 60 min (`Retry-After` honoured). First install ships
+  from the start of the current day's files. A rotated (`_prev`) file is shipped to its last byte even without a
+  trailing newline.
 - Trio's log gets one line only on state changes (enabled/disabled, token refused, backoff entered/left, 413).
   Everything else is `os_log` only, so the shipper cannot feed its own log.
 - Events: `bolus_deleted` (History → `deleteInsulinFromServices`, after the Core Data save; `delivered=true` for a
   finalized pump record, `false` for a pending one, absent for external insulin), `bolus_failed kind=manual`
-  (`BolusFailureObserver`, paired with the preceding `lastError` text when it arrived within 3 s), `pump_error`
+  (`BolusFailureObserver`, paired with the preceding `lastError` text: held 3 s for it, or the most recent error
+  within 30 s when the main thread was slower), `pump_error`
   (every other `lastError`; same text at most once per 30 min). SMB failures are `pump_error` — the amount follows in
   the log (decision: 0 lines in `APSManager`).
 
