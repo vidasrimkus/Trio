@@ -1,0 +1,496 @@
+import Combine
+import Foundation
+import os.log
+import Swinject
+import UIKit
+
+/// Ships new lines of Trio's and DanaKit's log files to our own server (t1d-monitor) after every
+/// loop cycle. Off by default; the loop never waits for it; a failure here changes nothing in Trio.
+/// Server contract: `docs/log-ingest-spec.md`.
+struct LogShipperConfig: Equatable {
+    var enabled = false
+    var url = ""
+    var token = ""
+}
+
+struct LogShipperStatus: Equatable {
+    var lastAttempt: Date?
+    var lastSuccess: Date?
+    var lastSentBytes = 0
+    var lastError: String?
+    var backoffUntil: Date?
+    var authFailed = false
+}
+
+protocol LogShipper: AnyObject {
+    var config: LogShipperConfig { get }
+    func save(_ config: LogShipperConfig)
+    var status: CurrentValueSubject<LogShipperStatus, Never> { get }
+    /// Manual "Send now" (ignores the interval and the backoff).
+    func shipNow()
+}
+
+extension Notification.Name {
+    /// Fallback trigger: posted by `FetchGlucoseManager` after every glucose store, so shipping goes
+    /// on even while no loop starts. The regular trigger is the end of a loop cycle.
+    static let logShipperActivity = Notification.Name("vidas.LogShipper.activity")
+}
+
+// MARK: - Wire format
+
+struct LogShipmentPayload: Encodable {
+    struct App: Encodable {
+        let version: String
+        let build: String
+        let sha: String
+    }
+
+    struct Batch: Encodable {
+        let stream: String
+        let fileId: String
+        let from: Int
+        let to: Int
+        let gapBefore: Bool
+        let text: String
+
+        enum CodingKeys: String, CodingKey {
+            case stream
+            case fileId = "file_id"
+            case from
+            case to
+            case gapBefore = "gap_before"
+            case text
+        }
+    }
+
+    let v = 1
+    let installId: String
+    let app: App
+    let sentAt: String
+    let batches: [Batch]
+
+    enum CodingKeys: String, CodingKey {
+        case v
+        case installId = "install_id"
+        case app
+        case sentAt = "sent_at"
+        case batches
+    }
+}
+
+enum LogShipmentCodec {
+    static let contentEncoding = "deflate-raw"
+
+    /// JSON, then raw DEFLATE (RFC 1951, what Apple's `.zlib` produces: no zlib header, no checksum).
+    static func encode(_ payload: LogShipmentPayload) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let json = try encoder.encode(payload)
+        return try (json as NSData).compressed(using: .zlib) as Data
+    }
+
+    static func decode(_ body: Data) throws -> Data {
+        try (body as NSData).decompressed(using: .zlib) as Data
+    }
+}
+
+struct LogShipmentAccepted: Decodable, Equatable {
+    let stream: String
+    let fileId: String
+    let to: Int
+
+    enum CodingKeys: String, CodingKey {
+        case stream
+        case fileId = "file_id"
+        case to
+    }
+}
+
+enum LogShipperOutcome: Equatable {
+    case accepted([LogShipmentAccepted])
+    case unauthorized
+    case tooLarge
+    case retryLater(after: TimeInterval?, message: String)
+}
+
+enum LogShipperResponse {
+    private struct Body: Decodable {
+        let accepted: [LogShipmentAccepted]
+    }
+
+    static func parse(status: Int, retryAfter: String?, body: Data) -> LogShipperOutcome {
+        switch status {
+        case 200 ... 299:
+            if let decoded = try? JSONDecoder().decode(Body.self, from: body) {
+                return .accepted(decoded.accepted)
+            }
+            return .retryLater(after: nil, message: "HTTP \(status): unreadable response")
+        case 401,
+             403:
+            return .unauthorized
+        case 413:
+            return .tooLarge
+        default:
+            let after = retryAfter.flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
+                .map { min(max($0, 0), BackoffPolicy.maximum) }
+            return .retryLater(after: after, message: "HTTP \(status)")
+        }
+    }
+}
+
+enum BackoffPolicy {
+    static let initial: TimeInterval = 5 * 60
+    static let maximum: TimeInterval = 60 * 60
+
+    static func next(after previous: TimeInterval?) -> TimeInterval {
+        guard let previous else { return initial }
+        return min(maximum, max(initial, previous * 2))
+    }
+}
+
+// MARK: - Service
+
+final class BaseLogShipper: LogShipper, Injectable {
+    enum Config {
+        static let urlKey = "LogShipper.url"
+        static let tokenKey = "LogShipper.token"
+        static let enabledKey = "LogShipper.enabled"
+        static let stateKey = "LogShipper.state"
+        static let limitKey = "LogShipper.limit"
+        static let installIdKey = "LogShipper.installId"
+        /// Loop cycles are 5 min; a little less so a slightly early cycle still ships.
+        static let minInterval: TimeInterval = 4.5 * 60
+        /// Lets DanaKit's log writer (background queue) flush the cycle's last lines first.
+        static let settleDelay: TimeInterval = 10
+        static let requestTimeout: TimeInterval = 15
+        static let defaultLimit = 1_048_576
+        static let minimumLimit = 65536
+    }
+
+    @Injected() private var apsManager: APSManager!
+    @Injected() private var keychain: Keychain!
+    @Injected() private var reachabilityManager: ReachabilityManager!
+
+    private struct LogStream {
+        let name: String
+        let reader: LogTailReader
+    }
+
+    private actor Gate {
+        private var busy = false
+        func tryEnter() -> Bool {
+            if busy { return false }
+            busy = true
+            return true
+        }
+
+        func leave() { busy = false }
+    }
+
+    let status = CurrentValueSubject<LogShipperStatus, Never>(LogShipperStatus())
+
+    private let defaults = UserDefaults.standard
+    private let log = OSLog(subsystem: Bundle.main.bundleIdentifier ?? "Trio", category: "LogShipper")
+    private let gate = Gate()
+    private let lock = NSLock()
+    private var streams: [LogStream] = []
+    private var subscriptions = Set<AnyCancellable>()
+
+    // Guarded by `lock`.
+    private var pendingShipment: Task<Void, Never>?
+    private var lastAttempt: Date = .distantPast
+    private var backoffInterval: TimeInterval?
+    private var backoffUntil: Date?
+    private var authFailed = false
+    private var limit: Int
+
+    init(resolver: Resolver) {
+        let stored = UserDefaults.standard.integer(forKey: Config.limitKey)
+        limit = stored >= Config.minimumLimit ? stored : Config.defaultLimit
+        injectServices(resolver)
+
+        let documents = SimpleLogReporter.getDocumentsDirectory()
+        streams = [
+            LogStream(name: "trio", reader: LogTailReader(
+                currentURL: URL(fileURLWithPath: SimpleLogReporter.logFile),
+                previousURL: URL(fileURLWithPath: SimpleLogReporter.logFilePrev)
+            )),
+            LogStream(name: "dana", reader: LogTailReader(
+                currentURL: documents.appendingPathComponent("danakit/dana_log.txt"),
+                previousURL: documents.appendingPathComponent("danakit/dana_log_prev.txt")
+            ))
+        ]
+
+        apsManager.isLooping
+            .dropFirst()
+            .removeDuplicates()
+            .filter { !$0 }
+            .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
+            .store(in: &subscriptions)
+
+        NotificationCenter.default.publisher(for: .logShipperActivity)
+            .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
+            .store(in: &subscriptions)
+    }
+
+    // MARK: - LogShipper
+
+    var config: LogShipperConfig {
+        LogShipperConfig(
+            enabled: defaults.bool(forKey: Config.enabledKey),
+            url: keychain.getValue(String.self, forKey: Config.urlKey) ?? "",
+            token: keychain.getValue(String.self, forKey: Config.tokenKey) ?? ""
+        )
+    }
+
+    func save(_ config: LogShipperConfig) {
+        let wasEnabled = defaults.bool(forKey: Config.enabledKey)
+        keychain.setValue(config.url, forKey: Config.urlKey)
+        keychain.setValue(config.token, forKey: Config.tokenKey)
+        defaults.set(config.enabled, forKey: Config.enabledKey)
+        lock.withLock {
+            authFailed = false
+            backoffUntil = nil
+            backoffInterval = nil
+        }
+        publishStatus { $0.authFailed = false; $0.backoffUntil = nil; $0.lastError = nil }
+        if wasEnabled != config.enabled {
+            debug(.service, "LogShipper \(config.enabled ? "enabled" : "disabled")")
+        }
+        if config.enabled {
+            requestShipment(force: true, delay: 0)
+        }
+    }
+
+    func shipNow() {
+        requestShipment(force: true, delay: 0)
+    }
+
+    // MARK: - Scheduling
+
+    private func requestShipment(force: Bool, delay: TimeInterval) {
+        guard force || defaults.bool(forKey: Config.enabledKey) else { return }
+        let now = Date()
+        let allowed: Bool = lock.withLock {
+            if !force {
+                if authFailed { return false }
+                if let until = backoffUntil, until > now { return false }
+                if now.timeIntervalSince(lastAttempt) < Config.minInterval { return false }
+            }
+            pendingShipment?.cancel()
+            pendingShipment = Task { [weak self] in
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+                guard !Task.isCancelled else { return }
+                await self?.ship(force: force)
+            }
+            return true
+        }
+        if allowed {
+            os_log("Shipment scheduled in %.0f s (force: %{public}@)", log: log, type: .debug, delay, String(force))
+        }
+    }
+
+    // MARK: - Shipping
+
+    private func ship(force: Bool) async {
+        guard await gate.tryEnter() else { return }
+
+        // Same shape as APSManager.loop(): the handler runs on the main thread.
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        taskID = await UIApplication.shared.beginBackgroundTask(withName: "LogShipper") {
+            if taskID != .invalid {
+                UIApplication.shared.endBackgroundTask(taskID)
+                taskID = .invalid
+            }
+        }
+
+        await performShipment(force: force)
+
+        if taskID != .invalid {
+            await UIApplication.shared.endBackgroundTask(taskID)
+            taskID = .invalid
+        }
+        await gate.leave()
+    }
+
+    private func performShipment(force: Bool) async {
+        guard force || reachabilityManager.isReachable else {
+            os_log("No network, skipped", log: log, type: .debug)
+            return
+        }
+        let config = self.config
+        guard force || config.enabled, let url = URL(string: config.url), !config.token.isEmpty else {
+            publishStatus { $0.lastError = "Not configured" }
+            return
+        }
+
+        lock.withLock { lastAttempt = Date() }
+        publishStatus { $0.lastAttempt = Date() }
+
+        var states = loadStates()
+        let limit = lock.withLock { self.limit }
+        var batches: [(stream: String, batch: LogTailReader.Batch, next: LogTailReader.StreamState)] = []
+        for stream in streams {
+            let result = stream.reader.next(state: states[stream.name] ?? LogTailReader.StreamState(), limit: limit)
+            if let batch = result.batch {
+                batches.append((stream: stream.name, batch: batch, next: result.stateAfterSuccess))
+            } else {
+                states[stream.name] = result.stateAfterSuccess
+            }
+        }
+        saveStates(states)
+        guard !batches.isEmpty else {
+            os_log("Nothing new", log: log, type: .debug)
+            return
+        }
+
+        let payload = LogShipmentPayload(
+            installId: installId,
+            app: LogShipmentPayload.App(
+                version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+                build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?",
+                sha: BuildDetails.shared.trioCommitSHA
+            ),
+            sentAt: ISO8601DateFormatter().string(from: Date()),
+            batches: batches.map {
+                LogShipmentPayload.Batch(
+                    stream: $0.stream,
+                    fileId: $0.batch.fileId,
+                    from: $0.batch.from,
+                    to: $0.batch.to,
+                    gapBefore: $0.batch.gapBefore,
+                    text: LogRedactor.redact(String(decoding: $0.batch.data, as: UTF8.self))
+                )
+            }
+        )
+
+        let body: Data
+        do {
+            body = try LogShipmentCodec.encode(payload)
+        } catch {
+            publishStatus { $0.lastError = "Encoding failed: \(error.localizedDescription)" }
+            return
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: Config.requestTimeout)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(LogShipmentCodec.contentEncoding, forHTTPHeaderField: "Content-Encoding")
+        request.setValue(LogShipmentCodec.contentEncoding, forHTTPHeaderField: "X-Trio-Log-Encoding")
+
+        let outcome: LogShipperOutcome
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let http = response as? HTTPURLResponse
+            outcome = LogShipperResponse.parse(
+                status: http?.statusCode ?? 0,
+                retryAfter: http?.value(forHTTPHeaderField: "Retry-After"),
+                body: data
+            )
+        } catch {
+            outcome = .retryLater(after: nil, message: error.localizedDescription)
+        }
+
+        apply(outcome, batches: batches, states: &states, sentBytes: body.count)
+        saveStates(states)
+    }
+
+    private func apply(
+        _ outcome: LogShipperOutcome,
+        batches: [(stream: String, batch: LogTailReader.Batch, next: LogTailReader.StreamState)],
+        states: inout [String: LogTailReader.StreamState],
+        sentBytes: Int
+    ) {
+        switch outcome {
+        case let .accepted(items):
+            for item in items {
+                guard let sent = batches.first(where: { $0.stream == item.stream && $0.batch.fileId == item.fileId }),
+                      item.to > sent.batch.from
+                else { continue }
+                states[item.stream] = LogTailReader.StreamState(
+                    fileId: item.fileId,
+                    offset: min(item.to, sent.batch.to)
+                )
+            }
+            let leftBackoff: Bool = lock.withLock {
+                let had = backoffUntil != nil
+                backoffUntil = nil
+                backoffInterval = nil
+                authFailed = false
+                return had
+            }
+            if leftBackoff {
+                debug(.service, "LogShipper: server reachable again")
+            }
+            publishStatus {
+                $0.lastSuccess = Date()
+                $0.lastSentBytes = sentBytes
+                $0.lastError = nil
+                $0.backoffUntil = nil
+                $0.authFailed = false
+            }
+            os_log("Shipped %d batch(es), %d bytes", log: log, type: .info, items.count, sentBytes)
+
+        case .unauthorized:
+            lock.withLock { authFailed = true }
+            publishStatus { $0.authFailed = true; $0.lastError = "Server refused the token (401)" }
+            debug(.service, "LogShipper: server refused the token; shipping paused until the settings change")
+
+        case .tooLarge:
+            let newLimit: Int = lock.withLock {
+                limit = max(Config.minimumLimit, limit / 2)
+                return limit
+            }
+            defaults.set(newLimit, forKey: Config.limitKey)
+            publishStatus { $0.lastError = "Shipment too large (413); limit now \(newLimit / 1024) KB" }
+            debug(.service, "LogShipper: 413, limit lowered to \(newLimit) bytes")
+
+        case let .retryLater(after, message):
+            let (until, entered): (Date, Bool) = lock.withLock {
+                let entered = backoffUntil == nil
+                let interval = after ?? BackoffPolicy.next(after: backoffInterval)
+                backoffInterval = interval
+                let until = Date().addingTimeInterval(interval)
+                backoffUntil = until
+                return (until, entered)
+            }
+            publishStatus { $0.lastError = message; $0.backoffUntil = until }
+            if entered {
+                debug(.service, "LogShipper: \(message); backing off")
+            }
+            os_log("Failed: %{public}@, retry after %@", log: log, type: .error, message, until as NSDate)
+        }
+    }
+
+    // MARK: - Persistence
+
+    private var installId: String {
+        if let id = defaults.string(forKey: Config.installIdKey) { return id }
+        let id = UUID().uuidString.lowercased()
+        defaults.set(id, forKey: Config.installIdKey)
+        return id
+    }
+
+    private func loadStates() -> [String: LogTailReader.StreamState] {
+        guard let data = defaults.data(forKey: Config.stateKey),
+              let states = try? JSONDecoder().decode([String: LogTailReader.StreamState].self, from: data)
+        else { return [:] }
+        return states
+    }
+
+    private func saveStates(_ states: [String: LogTailReader.StreamState]) {
+        if let data = try? JSONEncoder().encode(states) {
+            defaults.set(data, forKey: Config.stateKey)
+        }
+    }
+
+    private func publishStatus(_ change: (inout LogShipperStatus) -> Void) {
+        var value = status.value
+        change(&value)
+        status.send(value)
+    }
+}

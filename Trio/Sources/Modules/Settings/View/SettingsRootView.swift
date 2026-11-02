@@ -297,6 +297,11 @@ extension Settings {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
+                            // [vidas] logs to our own server (docs/log-ingest-spec.md)
+                            NavigationLink(destination: LogShipperConfigView(shipper: resolver.resolve(LogShipper.self)!)) {
+                                Text("Log Shipper")
+                            }
+
                             Button {
                                 if let url = URL(string: "https://github.com/nightscout/Trio/issues/new/choose") {
                                     UIApplication.shared.open(url)

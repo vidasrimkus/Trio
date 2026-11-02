@@ -52,6 +52,8 @@ Nothing else in the workflow changed. Run it with
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
 | LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
+| Trio → t1d-monitor (branch `feature/log-shipper`) | `POST /api/logs`, Bearer token, raw-DEFLATE JSON with the new bytes of `logs/log.txt` and `danakit/dana_log.txt`; response `{"accepted":[…]}`. Full contract in `docs/log-ingest-spec.md` (§8). |
+| Trio → Nightscout → t1d-monitor (branch `feature/log-shipper`) | Notes `[trio-event v1] bolus_deleted …`, `bolus_failed …`, `pump_error …` (grammar in `docs/log-ingest-spec.md` §6.1). The same line is written to Trio's log. |
 
 If any of these contracts changes, `vidasrimkus/LoopFollow` and `t1d-monitor` must change too.
 
@@ -180,3 +182,59 @@ Double literal differs — e.g. 0.57 is truncated as a literal but not on this p
 
 Trio `RemoteBasalScheduleTests.danaTruncationTable` runs the full validation over all 500 and LoopFollow
 `BasalProfileTests.danaTruncationTable` its own check; both must equal this list.
+
+## 8. Log shipping to t1d-monitor and Trio event Notes (branch `feature/log-shipper`)
+
+**Purpose.** See the Trio and DanaKit logs on our own server in near real time (after every loop cycle, ≈ 5 min)
+instead of waiting for a "Share Logs" export, and get a Nightscout Note at once for the events that matter most
+(a bolus deleted from History, a failed bolus, a pump error). Server contract: `docs/log-ingest-spec.md`.
+**Off by default**; enabled in Settings → Support & Community → Log Shipper.
+
+**Files.** New `Trio/Sources/Services/LogShipper/`:
+
+| File | What |
+|---|---|
+| `LogShipper.swift` | `LogShipper` protocol, `BaseLogShipper` (scheduling, HTTP, backoff, offsets in `UserDefaults`, URL/token in Keychain), wire-format types (`LogShipmentPayload`, `LogShipmentCodec`, `LogShipperResponse`, `BackoffPolicy`). |
+| `LogTailReader.swift` | Pure: next unsent bytes of a log file; follows the daily rename by `inode:creationDate`; flags gaps (missed rotation, truncation). |
+| `LogRedactor.swift` | Pure: Dana pairing key/passkey, APNS device token, query-string secrets, bearer tokens; every `Data: <hex>` while a pairing is in the batch. |
+| `TrioEventNotes.swift` | `TrioEvent`, the `[trio-event v1]` line format, `EventThrottle`. |
+| `TrioEventReporter.swift` | Nightscout Notes through the existing `uploadNoteTreatment`; sources `apsManager.lastError` and `BolusFailureObserver`; the same line goes into Trio's log. |
+| `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |
+
+Existing files: `ServiceAssembly.swift` (+2 registrations), `TrioApp.swift` (+2 eager resolves),
+`FetchGlucoseManager.swift` (+1: `NotificationCenter` post after every glucose store — fallback trigger),
+`HistoryStateModel.swift` (+1 injection), `HistoryStateModel+Insulin.swift` (`deleteInsulinFromServices` returns the
+deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: NavigationLink), `project.pbxproj`,
+`TrioTests/ContainerResolutionTests.swift` (+2), new `TrioTests/LogShipperTests.swift`.
+**No change to `APSManager`, `NightscoutManager`, `OpenAPS*`, DanaKit or OmnipodKit.**
+
+**Behaviour.**
+- Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure), plus the glucose-store
+  notification. Shipment runs 10 s later (lets DanaKit's log queue flush), at most once per 4.5 min, only when the
+  network is reachable, inside its own `beginBackgroundTask`. The loop never waits for it.
+- Both files are read from their last accepted offset (`LogTailReader`), cut at a newline, ≤ 1 MB per stream per
+  shipment (a day's backlog catches up in ≈ 80 min), redacted, JSON + raw DEFLATE, `POST` with Bearer token, 15 s timeout.
+- The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the
+  phone's own rotation drops it (24–48 h), after which the next batch carries `gap_before: true`.
+- Responses: 200 moves the offsets; 401/403 pauses until settings are saved again; 413 halves the batch limit
+  (floor 64 KB); 429/5xx/network → backoff 5 → 60 min (`Retry-After` honoured). First install ships from the start of
+  the current day's files.
+- Trio's log gets one line only on state changes (enabled/disabled, token refused, backoff entered/left, 413).
+  Everything else is `os_log` only, so the shipper cannot feed its own log.
+- Events: `bolus_deleted` (History → `deleteInsulinFromServices`, after the Core Data save; `delivered=true` for a
+  finalized pump record, `false` for a pending one, absent for external insulin), `bolus_failed kind=manual`
+  (`BolusFailureObserver`, paired with the preceding `lastError` text when it arrived within 3 s), `pump_error`
+  (every other `lastError`; same text at most once per 30 min). SMB failures are `pump_error` — the amount follows in
+  the log (decision: 0 lines in `APSManager`).
+
+**What is not covered / accepted.**
+- `uploadNoteTreatment` does not retry: a Note sent while offline is lost. The same line is in Trio's log, which
+  the server extracts into `log_events`.
+- iOS gives no guaranteed background time; the real cadence shows in the server's `from`/`to` continuity.
+- A pairing split across two shipments can leak packet hex in the second one (own server, accepted).
+- The Keychain token lets its holder post junk to `/api/logs`, nothing more. Rotate it on the server and the phone
+  together; a rotation on the server alone pauses shipping (401) until the phone is updated.
+- Battery not measured; ≈ 288 small HTTPS requests/day at the same moments as the Nightscout uploads.
+
+**After installing a build with this:** open Settings → Log Shipper, enter URL and token, enable, press Send now,
+check the status rows and the server's `log_batches`. Then confirm pump, CGM, loop and dosing mode as for any build.
