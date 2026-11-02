@@ -22,6 +22,7 @@ on:
   push:
     branches:
       - dev
+      - main # [vidas] every merge refreshes the cache baseline and gets a post-merge full run
     paths-ignore:
       - '**.md'
       - '**/README'
@@ -211,7 +212,7 @@ jobs:
         run: |
           if [ -f xcodebuild-build.log ]; then
             echo "::group::Build errors (tail)"
-            grep -nE "error:|Undefined symbol|PhaseScriptExecution failed|The following build commands failed|BUILD FAILED|Trace/BPT trap" xcodebuild-build.log | tail -n 80 || echo "no matching error lines"
+            grep -nE "error:|Undefined symbol|PhaseScriptExecution failed|The following build commands failed|BUILD FAILED|Trace/BPT trap|Available destinations|platform:iOS Simulator" xcodebuild-build.log | tail -n 80 || echo "no matching error lines"
             echo "::endgroup::"
           else
             echo "No xcodebuild-build.log produced."
@@ -287,6 +288,12 @@ jobs:
             ${ONLY_TESTING:+-only-testing:"$ONLY_TESTING"} \
             2>&1 | tee xcodebuild.log || _rc=$?
           echo "Run tests|$(( $(date +%s) - _start ))" >> "$GITHUB_WORKSPACE/.timings"
+          # [vidas] a filter that matches nothing runs 0 tests and exits 0 — that is not a pass
+          if [ -n "$ONLY_TESTING" ] && [ "${_rc:-0}" = "0" ] \
+             && ! grep -qE "Test run with [1-9][0-9]* tests|Executed [1-9][0-9]* tests" xcodebuild.log; then
+            echo "::error title=No tests ran::-only-testing:$ONLY_TESTING matched no test"
+            exit 1
+          fi
           exit ${_rc:-0}
 
       # Report the ACTUAL xcodebuild test outcome, not a grep guess. A crash or
@@ -295,11 +302,19 @@ jobs:
       # named failures AND crash/launch/entitlement indicators.
       - name: Annotate test results
         if: always()
+        env:
+          ONLY_TESTING: ${{ github.event.inputs.only_testing }}
         run: |
           case "${{ steps.run_tests.outcome }}" in
             success)
-              echo "::notice title=Unit Tests Passed::✅ All tests passed"
-              echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$ONLY_TESTING" ]; then
+                # [vidas] a partial run must not read like the full pass rule 7 requires
+                echo "::warning title=Unit Tests Passed (PARTIAL)::only -only-testing:$ONLY_TESTING ran"
+                echo "⚠️ PARTIAL: tests in \`-only-testing:$ONLY_TESTING\` passed — not a full run" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "::notice title=Unit Tests Passed::✅ All tests passed"
+                echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+              fi
               ;;
             skipped)
               echo "::warning title=Unit Tests Skipped::Test phase did not run (build failed earlier)"

@@ -43,17 +43,21 @@ Encryption, the timestamp window, the algorithm (`OpenAPS/`, `OpenAPSSwift/`),
 `if: github.repository_owner == 'nightscout'` from both jobs (`algorithm-package`, `test`).
 Run it with `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`.
 
-**Caches (branch `chore/ci-and-gotchas`, 2026-11-02).** Upstream saves its DerivedData / SPM / BuildTools caches only on
-`push` to `dev`; this fork has no `dev` and runs only `workflow_dispatch`, so for two months no cache was ever written
-(every run cold, ≈ 20 min). Changes, all marked `[vidas]` in the file:
-- caches are also saved by `workflow_dispatch` runs **on `main`** (`github.ref == 'refs/heads/main'`); feature
-  branches restore them through the `restore-keys` prefixes and never write (one ≈ 5.4 GB baseline, 10 GB repo limit);
+**Caches (branch `chore/ci-and-gotchas`, 2026-11-02).** Upstream saves its DerivedData and AlgorithmPackage SPM caches
+only on `push` to `dev`; this fork has no `dev` and ran only `workflow_dispatch`, so for two months no cache was ever
+written (every run cold, ≈ 20 min). The BuildTools (SwiftFormat) cache step is a no-op in CI — `BuildTools/.build` is
+never produced there ("Path Validation Error" in every run) — left as upstream has it. Changes, all marked `[vidas]`:
+- `main` is in the `push` trigger: every merge gets a full post-merge run that writes the cache baseline; a
+  `workflow_dispatch` run on `main` writes it too. Feature branches restore through the `restore-keys` prefixes and
+  never write (one ≈ 5.4 GB baseline, 10 GB repo limit);
+- a run with `only_testing` that matches no test fails ("No tests ran") instead of passing with 0 tests, and a green
+  partial run is annotated PARTIAL;
 - the Xcode/Swift version (`xcodebuild -version`) is part of every cache key;
 - the informational "List available simulators" step (43 s) is gone;
 - input `only_testing` (e.g. `TrioTests/LogShipperTests`) runs one target/suite:
   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch> -f only_testing=TrioTests/LogShipperTests`.
   The run is annotated as partial; **the full run is still required before a merge** (CLAUDE.md rule 7).
-To warm the baseline after a dependency or Xcode change: dispatch the workflow from `main` once (the next run is warm).
+The baseline refreshes itself with every merge to `main`; after an Xcode image bump the first run is cold again.
 `build_trio.yml` has no cache and is unchanged.
 
 ## 3. Interfaces (other systems depend on these)

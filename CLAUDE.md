@@ -48,8 +48,8 @@ Rule for this list: every CI failure whose cause would repeat gets a line here, 
 - Tests and builds run only on GitHub (no Swift toolchain on the Windows machine); `unit_tests.yml` has
   `cancel-in-progress`, so a new dispatch on the same branch cancels the running one — "cancelled" is not a failure.
 - New `.swift` files must be registered in `Trio.xcodeproj/project.pbxproj` by hand (file reference, build file,
-  group, Sources phase); only `Preview Content` is a synchronized folder. Copy the pattern of the previous
-  `[vidas]` commit.
+  group, Sources phase); only `Preview Content` and `LiveActivity/Views` are synchronized folders (files there must
+  NOT be listed by hand). Copy the pattern of the previous `[vidas]` commit.
 - Tests are Swift Testing (`import Testing`, `@Suite`, `#expect`); a `mutating` call inside `#expect` is fragile —
   compute into a `let` first.
 - `startBackgroundTask(withName:)` in `Trio/Sources/Helpers/BackgroundTask+Helper.swift:21` captures `.invalid`
@@ -62,7 +62,8 @@ Rule for this list: every CI failure whose cause would repeat gets a line here, 
   nothing expensive in a destination view's `init`.
 - Capturing a mutable local in a `Task { }` is a compile error; a `Task` sleeping without its own
   `beginBackgroundTask` is suspended with the process — take the task before the sleep.
-- On this Windows machine `rg` is not installed (the Grep tool fails) — use `git grep`; `node -I` does not exist.
+- On this Windows machine `rg` is not on PATH; the Grep tool can fail with `ENOENT rg` — `git grep` in Bash
+  always works; `node -I` does not exist.
 
 ## Upstream update procedure
 
