@@ -388,6 +388,16 @@ import Testing
         #expect(LogShipperResponse.parse(status: 500, retryAfter: nil, body: Data()) == .retryLater(after: nil, message: "HTTP 500"))
     }
 
+    @Test("Retry-After as seconds or HTTP date") func retryAfter() {
+        let now = Date(timeIntervalSince1970: 1_793_607_153) // 2026-11-02T08:12:33Z
+        #expect(LogShipperResponse.retryAfterInterval("120", now: now) == 120)
+        #expect(LogShipperResponse.retryAfterInterval("Mon, 02 Nov 2026 08:22:33 GMT", now: now) == 600)
+        #expect(LogShipperResponse.retryAfterInterval("Mon, 02 Nov 2026 08:00:00 GMT", now: now) == 0)
+        #expect(LogShipperResponse.retryAfterInterval("Tue, 03 Nov 2026 08:00:00 GMT", now: now) == 3600)
+        #expect(LogShipperResponse.retryAfterInterval("soon", now: now) == nil)
+        #expect(LogShipperResponse.retryAfterInterval(nil, now: now) == nil)
+    }
+
     @Test("Backoff doubles from 5 min to 60 min") func backoff() {
         #expect(BackoffPolicy.next(after: nil) == 300)
         #expect(BackoffPolicy.next(after: 300) == 600)

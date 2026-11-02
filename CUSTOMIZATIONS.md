@@ -209,11 +209,11 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 
 **Behaviour.**
 - Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure) → shipment 10 s later (lets
-  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 90 s
-  later, replaced by the loop-end shipment when a loop follows the reading (so a shipment never captures a half-finished
-  loop) and shipping anyway when no loop starts. At most once per minute (a request that comes sooner, or while a
-  shipment runs, is deferred, never dropped), only when the network is reachable, inside its own
-  `beginBackgroundTask`; a running shipment is never cancelled. The loop never waits for it.
+  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 25 s
+  later (inside the ~30 s of background time iOS grants); if a loop is running at that moment it steps aside and the
+  loop end ships the complete cycle, otherwise it ships (pump unreachable, no loop). At most once per minute (a request
+  that comes sooner, or while a shipment runs, is deferred, never dropped). The background task is taken before the
+  delay, only when the network is reachable; a running shipment is never cancelled. The loop never waits for it.
 - Both files are read from their last accepted offset (`LogTailReader`), cut at a newline, ≤ 1 MB per stream per
   shipment (a day's backlog catches up in ≈ 80 min), redacted, JSON + raw DEFLATE, `POST` with Bearer token, 15 s timeout.
 - The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the

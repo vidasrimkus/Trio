@@ -64,7 +64,8 @@ enum TrioEventNote {
         NSDecimalNumber(decimal: value).description(withLocale: Locale(identifier: "en_US_POSIX"))
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    /// `2026-11-02T08:12:33Z` — used for `at=` here and for `sent_at` in the shipment.
+    static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)

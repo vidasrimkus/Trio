@@ -58,8 +58,8 @@ struct LogShipperConfigView: View {
                 row("Last shipment", status.lastSentBytes > 0 ? "\(bytes(status.lastSentBytes)) compressed" : "—")
                 if status.authFailed {
                     row("Paused", "server refused the token")
-                } else if let until = status.backoffUntil, until > Date() {
-                    row("Backing off until", time(until))
+                } else if let until = status.backoffUntil {
+                    row("Backing off until", time(until)) // stays until the next attempt publishes
                 }
                 if let error = status.lastError {
                     row("Last error", error)

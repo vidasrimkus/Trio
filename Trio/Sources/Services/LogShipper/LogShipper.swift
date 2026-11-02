@@ -125,10 +125,30 @@ enum LogShipperResponse {
         case 413:
             return .tooLarge
         default:
-            let after = retryAfter.flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
-                .map { min(max($0, 0), BackoffPolicy.maximum) }
-            return .retryLater(after: after, message: "HTTP \(status)")
+            return .retryLater(after: retryAfterInterval(retryAfter), message: "HTTP \(status)")
         }
+    }
+
+    private static let httpDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter
+    }()
+
+    /// `Retry-After` as delay seconds or an HTTP date (RFC 9110); clamped to the backoff ceiling.
+    static func retryAfterInterval(_ header: String?, now: Date = Date()) -> TimeInterval? {
+        guard let value = header?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+        let seconds: TimeInterval
+        if let number = TimeInterval(value) {
+            seconds = number
+        } else if let date = httpDateFormatter.date(from: value) {
+            seconds = date.timeIntervalSince(now)
+        } else {
+            return nil
+        }
+        return min(max(seconds, 0), BackoffPolicy.maximum)
     }
 }
 
@@ -157,9 +177,9 @@ final class BaseLogShipper: LogShipper, Injectable {
         static let minInterval: TimeInterval = 60
         /// After a loop ends: lets DanaKit's log writer (background queue) flush the cycle's last lines.
         static let settleDelay: TimeInterval = 10
-        /// After a glucose store: long enough for the loop that normally follows the reading to end
-        /// and replace this with the earlier loop-end shipment; ships anyway when no loop runs.
-        static let fallbackDelay: TimeInterval = 90
+        /// After a glucose store: inside the ~30 s of background time iOS grants. If a loop is
+        /// running when it fires, it steps aside (the loop end ships); otherwise it ships.
+        static let fallbackDelay: TimeInterval = 25
         static let requestTimeout: TimeInterval = 15
         static let defaultLimit = 1_048_576
         static let minimumLimit = 65536
@@ -305,7 +325,9 @@ final class BaseLogShipper: LogShipper, Injectable {
                     rerunRequested = (rerunRequested ?? false) || force
                     return false
                 }
-                guard force || due < pendingDue else { return false }
+                // A sleeping task whose due time has passed was suspended with the process; it
+                // may be replaced like any later one.
+                guard force || due < max(pendingDue, now) else { return false }
                 pendingShipment?.cancel()
             }
             let token = UUID()
@@ -328,7 +350,13 @@ final class BaseLogShipper: LogShipper, Injectable {
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
                 if let self, self.startShipping(token) {
-                    await self.performShipment(force: force)
+                    // A fallback that fires while a loop is running steps aside: the loop end
+                    // ships the complete cycle (unless `force`).
+                    if force || !self.apsManager.isLooping.value {
+                        await self.performShipment(force: force)
+                    } else {
+                        os_log("Loop in progress, leaving the shipment to its end", log: self.log, type: .debug)
+                    }
                     self.finishShipping(token)
                 }
                 if taskID != .invalid {
@@ -412,7 +440,7 @@ final class BaseLogShipper: LogShipper, Injectable {
                 build: Bundle.main.buildVersionNumber ?? "?",
                 sha: BuildDetails.shared.trioCommitSHA
             ),
-            sentAt: ISO8601DateFormatter().string(from: now),
+            sentAt: TrioEventNote.isoFormatter.string(from: now),
             batches: shipments.map {
                 LogShipmentPayload.Batch(
                     stream: $0.stream,

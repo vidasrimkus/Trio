@@ -91,10 +91,14 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
                 self.emit(.pumpError(error: text))
                 return
             }
-            // A second pairable error inside the hold (e.g. SMB enact failure, then the loop's own
-            // failure) must not swallow the first one.
-            if let previous = self.pending, previous.text != text {
-                self.emit(.pumpError(error: previous.text))
+            // A second pairable error inside the hold (e.g. the loop's own failure right after a
+            // bolus error) goes out at once as pump_error; the held one stays, because a pending
+            // bolusDidFail() belongs to the earlier error.
+            if let previous = self.pending {
+                if previous.text != text {
+                    self.emit(.pumpError(error: text))
+                }
+                return
             }
             self.pending = (text, Date())
             self.lastError = self.pending
@@ -103,9 +107,9 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
             self.queue.asyncAfter(deadline: .now() + Config.holdInterval) {
                 guard generation == self.generation, let pending = self.pending else { return }
                 self.pending = nil
+                // `lastError` stays: a bolusDidFail() that arrives after the hold (busy main
+                // thread) still names this error, so the Note carries the cause.
                 self.emit(.pumpError(error: pending.text))
-                // Once out as pump_error it must not be attached to a late bolusDidFail as well.
-                self.lastError = nil
             }
         }
     }
