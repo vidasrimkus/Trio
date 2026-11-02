@@ -13,6 +13,7 @@ extension History {
         @ObservationIgnored @Injected() var glucoseStorage: GlucoseStorage!
         @ObservationIgnored @Injected() var healthKitManager: HealthKitManager!
         @ObservationIgnored @Injected() var carbsStorage: CarbsStorage!
+        @ObservationIgnored @Injected() var eventReporter: TrioEventReporter! // [vidas] Nightscout Note on bolus deletion
 
         var mode: Mode = .treatments
         var treatments: [Treatment] = []

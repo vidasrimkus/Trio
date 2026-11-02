@@ -44,5 +44,7 @@ final class ServiceAssembly: Assembly {
             .inObjectScope(.container)
         container.register(TelemetryAttestor.self) { r in TelemetryAttestor(resolver: r) }
             .inObjectScope(.container)
+        container.register(LogShipper.self) { r in BaseLogShipper(resolver: r) }.inObjectScope(.container) // [vidas]
+        container.register(TrioEventReporter.self) { r in BaseTrioEventReporter(resolver: r) }.inObjectScope(.container) // [vidas]
     }
 }

@@ -57,29 +57,43 @@ extension History.StateModel {
         taskContext.name = "deleteContext"
         taskContext.transactionAuthor = "deleteInsulinFromServices"
 
-        await taskContext.perform {
+        // [vidas] the deleted bolus, reported as a Nightscout Note once the delete is saved
+        let deletedBolus: TrioEvent? = await taskContext.perform {
             do {
                 guard let treatmentToDelete = try taskContext.existingObject(with: treatmentObjectID) as? PumpEventStored
                 else {
                     debug(.default, "Could not cast the object to PumpEventStored")
-                    return
+                    return nil
                 }
 
+                var deleted: TrioEvent?
                 if let id = treatmentToDelete.id, let timestamp = treatmentToDelete.timestamp,
                    let bolus = treatmentToDelete.bolus, let bolusAmount = bolus.amount
                 {
                     self.provider.deleteInsulinFromNightscout(withID: id)
                     self.provider.deleteInsulinFromHealth(withSyncID: id)
                     self.provider.deleteInsulinFromTidepool(withSyncId: id, amount: bolusAmount as Decimal, at: timestamp)
+                    deleted = .bolusDeleted(
+                        id: id,
+                        amount: bolusAmount as Decimal,
+                        kind: bolus.isExternal ? .external : (bolus.isSMB ? .smb : .manual),
+                        delivered: bolus.isExternal ? nil : !treatmentToDelete.isMutable,
+                        at: timestamp
+                    )
                 }
 
                 taskContext.delete(treatmentToDelete)
                 try taskContext.save()
 
                 debug(.default, "Successfully deleted the treatment object.")
+                return deleted
             } catch {
                 debug(.default, "Failed to delete the treatment object: \(error)")
+                return nil
             }
+        }
+        if let deletedBolus {
+            eventReporter.report(deletedBolus)
         }
     }
 }

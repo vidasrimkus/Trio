@@ -86,6 +86,8 @@ extension Notification.Name {
         _ = resolver.resolve(IOBService.self)!
         _ = resolver.resolve(GlucoseAlertCoordinator.self)!
         _ = resolver.resolve(NotLoopingMonitor.self)!
+        _ = resolver.resolve(LogShipper.self)! // [vidas]
+        _ = resolver.resolve(TrioEventReporter.self)! // [vidas]
         _ = DeviceAlertsStore.shared
         // Last: needs the pump manager's AlertResponder registration and the
         // seeded DeviceAlertsStore in place before re-presenting alerts.

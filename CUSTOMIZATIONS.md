@@ -52,6 +52,8 @@ Nothing else in the workflow changed. Run it with
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
 | LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
+| Trio → t1d-monitor (branch `feature/log-shipper`) | `POST /api/logs`, Bearer token, raw-DEFLATE JSON with the new bytes of `logs/log.txt` and `danakit/dana_log.txt`; response `{"accepted":[…]}`. Full contract in `docs/log-ingest-spec.md` (§8). |
+| Trio → Nightscout → t1d-monitor (branch `feature/log-shipper`) | Notes `[trio-event v1] bolus_deleted …`, `bolus_failed …`, `pump_error …` (grammar in `docs/log-ingest-spec.md` §6.1). The same line is written to Trio's log. |
 
 If any of these contracts changes, `vidasrimkus/LoopFollow` and `t1d-monitor` must change too.
 
@@ -180,3 +182,101 @@ Double literal differs — e.g. 0.57 is truncated as a literal but not on this p
 
 Trio `RemoteBasalScheduleTests.danaTruncationTable` runs the full validation over all 500 and LoopFollow
 `BasalProfileTests.danaTruncationTable` its own check; both must equal this list.
+
+## 8. Log shipping to t1d-monitor and Trio event Notes (branch `feature/log-shipper`)
+
+**Purpose.** See the Trio and DanaKit logs on our own server in near real time (after every loop cycle, ≈ 5 min)
+instead of waiting for a "Share Logs" export, and get a Nightscout Note at once for the events that matter most
+(a bolus deleted from History, a failed bolus, a pump error). Server contract: `docs/log-ingest-spec.md`.
+**Off by default**; enabled in Settings → Support & Community → Log Shipper.
+
+**Files.** New `Trio/Sources/Services/LogShipper/`:
+
+| File | What |
+|---|---|
+| `LogShipper.swift` | `LogShipper` protocol, `BaseLogShipper` (scheduling, HTTP, backoff, offsets in `UserDefaults`, URL/token in Keychain), wire-format types (`LogShipmentPayload`, `LogShipmentCodec`, `LogShipperResponse`, `BackoffPolicy`). |
+| `LogTailReader.swift` | Pure: next unsent bytes of a log file; follows the daily rename by `inode:creationDate`; flags gaps (missed rotation, truncation). |
+| `LogRedactor.swift` | Pure: Dana keys in every DanaKit form (`pairingKey:`, `Pairing key:`, `random pairing key:`, `random sync key:`), passkey packets, APNS device token, query-string secrets, bearer tokens; every packet dump (`Data:`, `Receiving data:`, `Encoded data:`) within 20 lines before / 150 lines after a pairing line (the per-connect "Setting encryption keys" line is not a pairing line). |
+| `TrioEventNotes.swift` | `TrioEvent`, the `[trio-event v1]` line format, `EventThrottle`. |
+| `TrioEventReporter.swift` | Nightscout Notes through the existing `uploadNoteTreatment`; sources `apsManager.lastError` and `BolusFailureObserver`; the same line goes into Trio's log. |
+| `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |
+
+Existing files: `ServiceAssembly.swift` (+2 registrations), `TrioApp.swift` (+2 eager resolves),
+`HistoryStateModel.swift` (+1 injection), `HistoryStateModel+Insulin.swift` (`deleteInsulinFromServices` returns the
+deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: NavigationLink), `project.pbxproj`,
+`TrioTests/ContainerResolutionTests.swift` (+2), new `TrioTests/LogShipperTests.swift`.
+**No change to `APSManager`, `NightscoutManager`, `FetchGlucoseManager`, `OpenAPS*`, DanaKit or OmnipodKit.**
+
+**Behaviour.**
+- Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure) → shipment 10 s later (lets
+  DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 15 s
+  later (15 s + the 15 s request fit the ~30 s of background time iOS grants); if a loop is running at that moment it steps aside and the
+  loop end ships the complete cycle, otherwise it ships (pump unreachable, no loop). At most once per minute: a request
+  that comes sooner is deferred when the wait fits in the background grant (≤ 15 s), otherwise left to the next trigger;
+  one that arrives while a shipment runs always runs right after it. The background task is taken before the delay
+  (the reachability check comes after it — `docs/log-shipper-todo.md`); a running shipment is never cancelled. The loop
+  never waits for it.
+- Both files are read from their last accepted offset (`LogTailReader`), cut at a newline, ≤ 1 MB per stream per
+  shipment (a day's backlog catches up in ≈ 80 min), redacted, JSON + raw DEFLATE, `POST` with Bearer token, 15 s timeout.
+- The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the
+  phone's own rotation drops it (24–48 h), after which the next batch carries `gap_before: true`.
+- Responses: 200 moves the offsets (a 2xx that accepts none of the sent batches counts as a failure); 401/403 pauses
+  until settings are saved again; 413 halves the batch limit (floor 64 KB; doubles back towards 1 MB after three
+  successful shipments in a row, resets on Save); 429/5xx → backoff 5 → 60 min (`Retry-After` honoured, seconds or
+  HTTP date). A transport error (no route, request cut by iOS suspending the process) is only recorded — no backoff,
+  the next trigger retries. First install ships
+  from the start of the current day's files. A rotated (`_prev`) file is shipped to its last byte even without a
+  trailing newline.
+- Trio's log gets one line only on state changes (enabled/disabled, token refused, backoff entered/left, 413).
+  Everything else is `os_log` only, so the shipper cannot feed its own log.
+- Events: `bolus_deleted` (History → `deleteInsulinFromServices`, after the Core Data save; `delivered=true` for a
+  finalized pump record, `false` for a pending one, absent for external insulin), `bolus_failed kind=manual`
+  (`BolusFailureObserver`, paired with the preceding `lastError` text: held 3 s for it, or the most recent error
+  within 30 s when the main thread was slower), `pump_error`
+  (every other `lastError`; same text at most once per 30 min). SMB failures are `pump_error` — the amount follows in
+  the log (decision: 0 lines in `APSManager`).
+
+**What is not covered / accepted.**
+- `uploadNoteTreatment` does not retry: a Note sent while offline is lost. The same line is in Trio's log, which
+  the server extracts into `log_events`.
+- iOS gives no guaranteed background time; the real cadence shows in the server's `from`/`to` continuity. A request
+  that would have to wait more than 15 s (inside the 60 s minimum interval) is dropped, the next trigger ships; one
+  that waited for a running shipment runs right after it regardless of the interval.
+- Which error belongs to a failed manual bolus is a timing heuristic (`lastError` held 3 s for `bolusDidFail()`, or
+  the most recent pump error within 30 s): a loop error in that window can be named instead. The exact fix is an
+  `error` parameter on `BolusFailureObserver.bolusDidFail()` in `APSManager` — rule 2, decision: not done.
+- A pairing split across two shipments can leak packet hex in the second one (own server, accepted).
+- The Keychain token lets its holder post junk to `/api/logs`, nothing more. Rotate it on the server and the phone
+  together; a rotation on the server alone pauses shipping (401) until the phone is updated.
+- Battery not measured; ≈ 288 small HTTPS requests/day at the same moments as the Nightscout uploads.
+
+**After installing a build with this:** open Settings → Log Shipper, enter URL and token, enable, press Send now,
+check the status rows and the server's `log_batches`. Then confirm pump, CGM, loop and dosing mode as for any build.
+
+## 9. Submodule `LibreCRKit` — URL moved to our own fork
+
+On 2026-11-02 `https://github.com/loopandlearn/LibreCRKit.git` (the URL in upstream v1.0.1's `.gitmodules`)
+returned 404 on GitHub, so every checkout with submodules — `unit_tests.yml` and `4. Build Trio` — fails before
+compiling. Upstream v1.0.2 (2026-10-07) replaced LibreCRKit with RoundWhiteDiscKit; our base is still v1.0.1.
+
+Fix: `vidasrimkus/LibreCRKit` is a fork of `pov-it/LibreCRKit` (branch `trio`, head = the commit Trio pins,
+`24d5617f703089a36f4261c3ab84f2ac505a8f1a`, same SHA → identical content). `.gitmodules` points there; the pinned
+commit is unchanged. First done on `feature/log-shipper`; **`main` needs the same one-line `.gitmodules` change
+before the next build.** Goes away with the upgrade to v1.0.2 (separate task).
+
+**Submodules hosted under `vidasrimkus` (same pinned commits as upstream v1.0.1; `.gitmodules` URL is the only change):**
+
+| Submodule | Our fork (of) | Pinned commit | Moved |
+|---|---|---|---|
+| LibreCRKit (branch `trio`) | `vidasrimkus/LibreCRKit` (pov-it/LibreCRKit) | `24d5617f703089a36f4261c3ab84f2ac505a8f1a` | 2026-11-02 |
+| DanaKit | `vidasrimkus/DanaKit` (loopandlearn/DanaKit) | `a2d3aa45810259283322c9af834fda181860b3ee` | 2026-11-02 |
+| OmnipodKit | `vidasrimkus/OmnipodKit` (loopandlearn/OmnipodKit) | `4e923d77695cbff9983ef1c252a785d7af588300` | 2026-11-02 |
+| LoopKit | `vidasrimkus/LoopKit` (loopandlearn/LoopKit) | `d52c298e3e3fe640e2ae1c5cef885da5daaa58cb` | 2026-11-02 |
+| LoopAlgorithm | `vidasrimkus/LoopAlgorithm` (loopandlearn/LoopAlgorithm) | `7d016fb55ded96ef25ef612a153c69a9c911ca19` | 2026-11-02 |
+
+The other 11 submodules and all SPM packages still point at their upstream owners (decision 2026-11-02). The full
+list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor checks it daily. **`main` needs the same
+`.gitmodules` URLs before the next build.** On an upstream upgrade, keep our URLs and move the pinned commits.
+
+Existing clones keep the old URLs in `.git/config` until `git submodule sync --recursive` is run once after
+pulling this change (CI and the browser build clone fresh, so they are unaffected).

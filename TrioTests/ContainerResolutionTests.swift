@@ -38,6 +38,8 @@ import Testing
         #expect(resolver.resolve(IOBService.self) != nil)
         #expect(resolver.resolve(GlucoseAlertCoordinator.self) != nil)
         #expect(resolver.resolve(NotLoopingMonitor.self) != nil)
+        #expect(resolver.resolve(LogShipper.self) != nil) // [vidas]
+        #expect(resolver.resolve(TrioEventReporter.self) != nil) // [vidas]
         #expect(resolver.resolve(TrioAlertManager.self) != nil)
         if #available(iOS 16.2, *) {
             #expect(resolver.resolve(LiveActivityManager.self) != nil)
