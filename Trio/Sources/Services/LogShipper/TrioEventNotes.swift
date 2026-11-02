@@ -11,7 +11,8 @@ enum TrioEvent: Equatable {
     /// A bolus removed from History. `delivered` is `true` for a finalized pump record,
     /// `false` for one still pending, nil when not applicable (external insulin).
     case bolusDeleted(id: String, amount: Decimal, kind: BolusKind, delivered: Bool?, at: Date)
-    case bolusFailed(kind: BolusKind, error: String?)
+    /// A manual bolus failed (`BolusFailureObserver`). SMB failures surface as `pumpError`.
+    case bolusFailed(error: String?)
     case pumpError(error: String)
 }
 
@@ -30,8 +31,8 @@ enum TrioEventNote {
             }
             fields.append("at=\(iso(at))")
             return "\(prefix) " + fields.joined(separator: " ")
-        case let .bolusFailed(kind, error):
-            var fields = ["bolus_failed", "kind=\(kind.rawValue)"]
+        case let .bolusFailed(error):
+            var fields = ["bolus_failed", "kind=manual"]
             if let error {
                 fields.append("err=\"\(sanitize(error))\"")
             }

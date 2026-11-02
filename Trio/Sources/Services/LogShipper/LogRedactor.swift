@@ -4,12 +4,16 @@ import Foundation
 /// byte offsets always refer to the raw file.
 ///
 /// Always redacted: the Dana pairing key and passkey exchange (`PeripheralManager.swift`), the APNS
-/// device token (`TrioRemoteControl+APNS.swift`), query-string secrets and bearer tokens. When a chunk
-/// contains a pairing, every `Data: <hex>` in it is redacted too, since the pairing packets are
-/// spread over several lines.
+/// device token (`TrioRemoteControl+APNS.swift`), query-string secrets and bearer tokens. Around a
+/// pairing (a few lines before, the exchange after it) every `Data: <hex>` is redacted too, since
+/// the pairing packets are spread over several lines; the rest of the batch keeps its packet
+/// diagnostics.
 enum LogRedactor {
     static let redacted = "[redacted]"
     static let redactedPairing = "[redacted:pairing]"
+    /// Lines around a pairing marker whose packets are redacted.
+    static let pairingLinesBefore = 20
+    static let pairingLinesAfter = 150
 
     private struct Rule {
         let regex: NSRegularExpression
@@ -40,14 +44,45 @@ enum LogRedactor {
     private static let pairingHex = Rule(#"(Data: )[0-9A-Fa-f]{2,}"#, "$1\(redactedPairing)")
 
     static func redact(_ text: String) -> String {
-        var result = text
-        for rule in valueRules {
-            result = apply(rule, to: result)
+        var lines = text.components(separatedBy: "\n")
+        var inPairingWindow = [Bool](repeating: false, count: lines.count)
+
+        var sinceMarker = Int.max
+        for i in lines.indices {
+            if isPairingMarker(lines[i]) {
+                sinceMarker = 0
+            } else if sinceMarker != Int.max {
+                sinceMarker += 1
+            }
+            if sinceMarker <= pairingLinesAfter {
+                inPairingWindow[i] = true
+            }
         }
-        if pairingMarkers.contains(where: { result.contains($0) }) {
-            result = apply(pairingHex, to: result)
+        var untilMarker = Int.max
+        for i in lines.indices.reversed() {
+            if isPairingMarker(lines[i]) {
+                untilMarker = 0
+            } else if untilMarker != Int.max {
+                untilMarker += 1
+            }
+            if untilMarker <= pairingLinesBefore {
+                inPairingWindow[i] = true
+            }
         }
-        return result
+
+        for i in lines.indices {
+            for rule in valueRules {
+                lines[i] = apply(rule, to: lines[i])
+            }
+            if inPairingWindow[i] {
+                lines[i] = apply(pairingHex, to: lines[i])
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func isPairingMarker(_ line: String) -> Bool {
+        pairingMarkers.contains(where: { line.contains($0) })
     }
 
     private static func apply(_ rule: Rule, to text: String) -> String {

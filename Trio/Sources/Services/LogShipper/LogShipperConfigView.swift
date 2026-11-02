@@ -49,7 +49,7 @@ struct LogShipperConfigView: View {
                 }
                 .disabled(!isDirty)
                 Button("Send now") { shipper.shipNow() }
-                    .disabled(isDirty || url.isEmpty || token.isEmpty)
+                    .disabled(isDirty || !saved.enabled || url.isEmpty || token.isEmpty)
             }
 
             Section(header: Text("Status")) {

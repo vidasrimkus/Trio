@@ -148,9 +148,10 @@ phone restarted). Server rule:
 | `token=`, `secret=`, `api-secret=`, `api_secret=`, `password=`, `passkey=`, `pin=` values (query strings, case-insensitive) | `=[redacted]` |
 | `Authorization: Bearer <x>` / `Bearer <x>` (≥ 8 chars) | `Bearer [redacted]` |
 
-If a batch contains a pairing (`Sending pairing request`, `processPairingRequest`, `Passkey`, `requesting pincode`,
-`Requested pincode`), **every** `Data: <hex>` in that batch becomes `Data: [redacted:pairing]`. Residual risk: a pairing
-split across two batches lets the second batch's packets through; acceptable for our own server.
+Around a pairing line (`Sending pairing request`, `processPairingRequest`, `Passkey`, `requesting pincode`,
+`Requested pincode`) — 20 lines before it and 150 lines after it — every `Data: <hex>` becomes
+`Data: [redacted:pairing]`; the rest of the batch keeps its packets. Residual risk: a pairing split across two
+batches lets the second batch's first packets through; acceptable for our own server.
 
 Not redacted (needed for diagnostics): Nightscout host in URL errors, Dana `deviceName`/`bleIdentifier`, glucose and doses.
 The content is the child's health data — treat the whole store as sensitive (§5).

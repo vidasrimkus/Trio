@@ -59,12 +59,14 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
             let now = Date()
             if let pending = self.pending {
                 self.pending = nil
+                self.lastError = nil
                 self.generation += 1
-                self.emit(.bolusFailed(kind: .manual, error: pending.text))
+                self.emit(.bolusFailed(error: pending.text))
             } else if let last = self.lastError, now.timeIntervalSince(last.at) <= Config.pairingWindow {
-                self.emit(.bolusFailed(kind: .manual, error: last.text))
+                self.lastError = nil
+                self.emit(.bolusFailed(error: last.text))
             } else {
-                self.emit(.bolusFailed(kind: .manual, error: nil))
+                self.emit(.bolusFailed(error: nil))
             }
         }
     }
@@ -102,6 +104,8 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
                 guard generation == self.generation, let pending = self.pending else { return }
                 self.pending = nil
                 self.emit(.pumpError(error: pending.text))
+                // Once out as pump_error it must not be attached to a late bolusDidFail as well.
+                self.lastError = nil
             }
         }
     }

@@ -277,6 +277,21 @@ import Testing
         #expect(!out.contains("ffee"))
     }
 
+    @Test("Pairing redaction is a window, not the whole batch") func redactPairingWindow() {
+        let packet = "[..] PeripheralManager.swift - parseReceivedValue(_:)#658: Decoding successful! Data: ffee"
+        let marker = "[..] PeripheralManager.swift - sendPairingRequest()#384: Sending pairing request. Data: 0a0b0c"
+        var lines = [String](repeating: packet, count: 400)
+        lines[200] = marker
+        let out = LogRedactor.redact(lines.joined(separator: "\n")).components(separatedBy: "\n")
+        #expect(out[200].hasSuffix("Data: [redacted]"))
+        #expect(out[200 - LogRedactor.pairingLinesBefore].hasSuffix(LogRedactor.redactedPairing))
+        #expect(out[200 - LogRedactor.pairingLinesBefore - 1] == packet)
+        #expect(out[200 + LogRedactor.pairingLinesAfter].hasSuffix(LogRedactor.redactedPairing))
+        #expect(out[200 + LogRedactor.pairingLinesAfter + 1] == packet)
+        #expect(out[0] == packet)
+        #expect(out[399] == packet)
+    }
+
     @Test("Ordinary lines are untouched") func redactLeavesOrdinaryLines() {
         let lines = [
             "[..] PeripheralManager.swift - parseReceivedValue(_:)#658: Decoding successful! Data: ffee",
@@ -304,9 +319,9 @@ import Testing
     }
 
     @Test("bolus_failed and pump_error sanitize the error text") func noteErrors() {
-        #expect(TrioEventNote.format(.bolusFailed(kind: .manual, error: nil)) == "[trio-event v1] bolus_failed kind=manual")
+        #expect(TrioEventNote.format(.bolusFailed(error: nil)) == "[trio-event v1] bolus_failed kind=manual")
         #expect(
-            TrioEventNote.format(.bolusFailed(kind: .manual, error: "Pump Error (\"timeout\")\n  second line")) ==
+            TrioEventNote.format(.bolusFailed(error: "Pump Error (\"timeout\")\n  second line")) ==
                 "[trio-event v1] bolus_failed kind=manual err=\"Pump Error ('timeout') second line\""
         )
         let long = String(repeating: "x", count: 200)

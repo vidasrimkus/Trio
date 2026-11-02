@@ -196,7 +196,7 @@ instead of waiting for a "Share Logs" export, and get a Nightscout Note at once 
 |---|---|
 | `LogShipper.swift` | `LogShipper` protocol, `BaseLogShipper` (scheduling, HTTP, backoff, offsets in `UserDefaults`, URL/token in Keychain), wire-format types (`LogShipmentPayload`, `LogShipmentCodec`, `LogShipperResponse`, `BackoffPolicy`). |
 | `LogTailReader.swift` | Pure: next unsent bytes of a log file; follows the daily rename by `inode:creationDate`; flags gaps (missed rotation, truncation). |
-| `LogRedactor.swift` | Pure: Dana pairing key/passkey, APNS device token, query-string secrets, bearer tokens; every `Data: <hex>` while a pairing is in the batch. |
+| `LogRedactor.swift` | Pure: Dana pairing key/passkey, APNS device token, query-string secrets, bearer tokens; every `Data: <hex>` within 20 lines before / 150 lines after a pairing line. |
 | `TrioEventNotes.swift` | `TrioEvent`, the `[trio-event v1]` line format, `EventThrottle`. |
 | `TrioEventReporter.swift` | Nightscout Notes through the existing `uploadNoteTreatment`; sources `apsManager.lastError` and `BolusFailureObserver`; the same line goes into Trio's log. |
 | `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |

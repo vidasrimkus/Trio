@@ -201,6 +201,8 @@ final class BaseLogShipper: LogShipper, Injectable {
     private var backoffUntil: Date?
     private var authFailed = false
     private var limit: Int
+    /// Successful shipments since the last 413; the limit grows back only after a few in a row.
+    private var successesSinceTooLarge = 0
     private var currentStatus = LogShipperStatus()
 
     init(resolver: Resolver) {
@@ -281,8 +283,10 @@ final class BaseLogShipper: LogShipper, Injectable {
 
     // MARK: - Scheduling
 
+    /// `force` (Save / Send now) skips the interval, the backoff and the auth pause — never the
+    /// enabled flag: nothing leaves the phone while "Send logs" is off.
     private func requestShipment(force: Bool, delay: TimeInterval) {
-        guard force || defaults.bool(forKey: Config.enabledKey) else { return }
+        guard defaults.bool(forKey: Config.enabledKey) else { return }
         let now = Date()
         var delay = delay
         let scheduled: Bool = lock.withLock {
@@ -309,12 +313,28 @@ final class BaseLogShipper: LogShipper, Injectable {
             pendingDue = due
             sleeping = true
             pendingShipment = Task { [weak self] in
+                // Background time is taken BEFORE the delay: once the loop's own background task
+                // ends, iOS suspends the process within seconds, and a shipment sleeping without
+                // one would slip to the next BLE wake-up — i.e. into the next loop. Same shape as
+                // APSManager.loop(): the expiration handler runs on the main thread.
+                var taskID: UIBackgroundTaskIdentifier = .invalid
+                taskID = await UIApplication.shared.beginBackgroundTask(withName: "LogShipper") {
+                    if taskID != .invalid {
+                        UIApplication.shared.endBackgroundTask(taskID)
+                        taskID = .invalid
+                    }
+                }
                 if delay > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
-                guard let self, self.startShipping(token) else { return }
-                await self.ship(force: force)
-                self.finishShipping(token)
+                if let self, self.startShipping(token) {
+                    await self.performShipment(force: force)
+                    self.finishShipping(token)
+                }
+                if taskID != .invalid {
+                    await UIApplication.shared.endBackgroundTask(taskID)
+                    taskID = .invalid
+                }
             }
             return true
         }
@@ -347,31 +367,13 @@ final class BaseLogShipper: LogShipper, Injectable {
 
     // MARK: - Shipping
 
-    private func ship(force: Bool) async {
-        // Same shape as APSManager.loop(): the handler runs on the main thread.
-        var taskID: UIBackgroundTaskIdentifier = .invalid
-        taskID = await UIApplication.shared.beginBackgroundTask(withName: "LogShipper") {
-            if taskID != .invalid {
-                UIApplication.shared.endBackgroundTask(taskID)
-                taskID = .invalid
-            }
-        }
-
-        await performShipment(force: force)
-
-        if taskID != .invalid {
-            await UIApplication.shared.endBackgroundTask(taskID)
-            taskID = .invalid
-        }
-    }
-
     private func performShipment(force: Bool) async {
         guard force || reachabilityManager.isReachable else {
             os_log("No network, skipped", log: log, type: .debug)
             return
         }
         let config = self.config
-        if !force, !config.enabled {
+        guard config.enabled else {
             return // disabled while this shipment slept: nothing to report
         }
         // https only: the body is the child's health data plus the token.
@@ -485,11 +487,13 @@ final class BaseLogShipper: LogShipper, Injectable {
                 backoffUntil = nil
                 backoffInterval = nil
                 authFailed = false
-                // Grow back after a 413 (one doubling per success, up to the default).
-                let grown = min(Config.defaultLimit, limit * 2)
-                let changed = grown != limit
-                limit = grown
-                return (had, changed ? grown : nil)
+                // Grow back after a 413, but only after three successes in a row — doubling on the
+                // very next one would alternate 413 / success during a catch-up.
+                successesSinceTooLarge += 1
+                guard limit < Config.defaultLimit, successesSinceTooLarge >= 3 else { return (had, nil) }
+                successesSinceTooLarge = 0
+                limit = min(Config.defaultLimit, limit * 2)
+                return (had, limit)
             }
             if let newLimit {
                 defaults.set(newLimit, forKey: Config.limitKey)
@@ -512,6 +516,7 @@ final class BaseLogShipper: LogShipper, Injectable {
         case .tooLarge:
             let newLimit: Int = lock.withLock {
                 limit = max(Config.minimumLimit, limit / 2)
+                successesSinceTooLarge = 0
                 return limit
             }
             defaults.set(newLimit, forKey: Config.limitKey)
@@ -544,16 +549,25 @@ final class BaseLogShipper: LogShipper, Injectable {
         return id
     }
 
+    /// One key per stream, so an unreadable state resets only that stream (from the start of the
+    /// current file; the server's overlap rule absorbs the re-send).
     private func loadStates() -> [String: LogTailReader.StreamState] {
-        guard let data = defaults.data(forKey: Config.stateKey),
-              let states = try? JSONDecoder().decode([String: LogTailReader.StreamState].self, from: data)
-        else { return [:] }
+        var states: [String: LogTailReader.StreamState] = [:]
+        for stream in streams {
+            if let data = defaults.data(forKey: Config.stateKey + "." + stream.name),
+               let state = try? JSONDecoder().decode(LogTailReader.StreamState.self, from: data)
+            {
+                states[stream.name] = state
+            }
+        }
         return states
     }
 
     private func saveStates(_ states: [String: LogTailReader.StreamState]) {
-        if let data = try? JSONEncoder().encode(states) {
-            defaults.set(data, forKey: Config.stateKey)
+        for (name, state) in states {
+            if let data = try? JSONEncoder().encode(state) {
+                defaults.set(data, forKey: Config.stateKey + "." + name)
+            }
         }
     }
 
