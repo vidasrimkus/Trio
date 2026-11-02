@@ -1,6 +1,6 @@
 [submodule "LoopKit"]
 	path = LoopKit
-	url = https://github.com/loopandlearn/LoopKit.git
+	url = https://github.com/vidasrimkus/LoopKit.git
 [submodule "CGMBLEKit"]
 	path = CGMBLEKit
 	url = https://github.com/loopandlearn/CGMBLEKit.git
@@ -24,13 +24,13 @@
 	url = https://github.com/loopandlearn/TidepoolService.git
 [submodule "DanaKit"]
 	path = DanaKit
-	url = https://github.com/loopandlearn/DanaKit
+	url = https://github.com/vidasrimkus/DanaKit
 [submodule "MedtrumKit"]
 	path = MedtrumKit
 	url = https://github.com/loopandlearn/MedtrumKit
 [submodule "OmnipodKit"]
 	path = OmnipodKit
-	url = https://github.com/loopandlearn/OmnipodKit
+	url = https://github.com/vidasrimkus/OmnipodKit
 [submodule "AccuChekKit"]
 	path = AccuChekKit
 	url = https://github.com/loopandlearn/AccuChekKit
@@ -47,4 +47,4 @@
 	branch = trio
 [submodule "LoopAlgorithm"]
 	path = LoopAlgorithm
-	url = https://github.com/loopandlearn/LoopAlgorithm.git
+	url = https://github.com/vidasrimkus/LoopAlgorithm.git

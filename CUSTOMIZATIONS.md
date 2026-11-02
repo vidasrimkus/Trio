@@ -249,3 +249,17 @@ Fix: `vidasrimkus/LibreCRKit` is a fork of `pov-it/LibreCRKit` (branch `trio`, h
 `24d5617f703089a36f4261c3ab84f2ac505a8f1a`, same SHA → identical content). `.gitmodules` points there; the pinned
 commit is unchanged. First done on `feature/log-shipper`; **`main` needs the same one-line `.gitmodules` change
 before the next build.** Goes away with the upgrade to v1.0.2 (separate task).
+
+**Submodules hosted under `vidasrimkus` (same pinned commits as upstream v1.0.1; `.gitmodules` URL is the only change):**
+
+| Submodule | Our fork (of) | Pinned commit | Moved |
+|---|---|---|---|
+| LibreCRKit (branch `trio`) | `vidasrimkus/LibreCRKit` (pov-it/LibreCRKit) | `24d5617f703089a36f4261c3ab84f2ac505a8f1a` | 2026-11-02 |
+| DanaKit | `vidasrimkus/DanaKit` (loopandlearn/DanaKit) | `a2d3aa45810259283322c9af834fda181860b3ee` | 2026-11-02 |
+| OmnipodKit | `vidasrimkus/OmnipodKit` (loopandlearn/OmnipodKit) | `4e923d77695cbff9983ef1c252a785d7af588300` | 2026-11-02 |
+| LoopKit | `vidasrimkus/LoopKit` (loopandlearn/LoopKit) | `d52c298e3e3fe640e2ae1c5cef885da5daaa58cb` | 2026-11-02 |
+| LoopAlgorithm | `vidasrimkus/LoopAlgorithm` (loopandlearn/LoopAlgorithm) | `7d016fb55ded96ef25ef612a153c69a9c911ca19` | 2026-11-02 |
+
+The other 11 submodules and all SPM packages still point at their upstream owners (decision 2026-11-02). The full
+list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor checks it daily. **`main` needs the same
+`.gitmodules` URLs before the next build.** On an upstream upgrade, keep our URLs and move the pinned commits.
