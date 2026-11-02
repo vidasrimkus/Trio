@@ -327,8 +327,11 @@ import Testing
         #expect(!repeated)
         #expect(other)
         #expect(later)
-        // Entries older than the window are evicted, so the table cannot grow without bound.
-        #expect(throttle.count == 1)
+        // Entries older than the window are evicted, so the table cannot grow without bound:
+        // at +31 min "a" (t0) was evicted and re-added, "b" (+10 min) is still inside the window.
+        #expect(throttle.count == 2)
+        _ = throttle.allow("c", at: t0.addingTimeInterval(41 * 60)) // "b" is now 31 min old → gone
+        #expect(throttle.count == 2)
     }
 
     // MARK: - Wire format
