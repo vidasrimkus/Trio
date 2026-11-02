@@ -151,6 +151,34 @@ import Testing
         #expect(text(fresh.batch) == "day2-a\n")
     }
 
+    @Test("Two missed rotations: the previous day is shipped first, flagged as a gap") func twoMissedRotations() {
+        let logs = Logs()
+        logs.create("fri\n")
+        let shipped = logs.reader.next(state: LogTailReader.StreamState(), limit: 1 << 20)
+        logs.rotate(newContent: "sat\n", created: Date(timeIntervalSince1970: 1_700_086_400))
+        let idSat = LogTailReader.info(of: logs.current)!.id
+        logs.rotate(newContent: "sun\n", created: Date(timeIntervalSince1970: 1_700_172_800))
+        let idSun = LogTailReader.info(of: logs.current)!.id
+
+        let saturday = logs.reader.next(state: shipped.stateAfterSuccess, limit: 1 << 20)
+        #expect(saturday.batch?.fileId == idSat)
+        #expect(text(saturday.batch) == "sat\n")
+        #expect(saturday.batch?.gapBefore == true)
+
+        let sunday = logs.reader.next(state: saturday.stateAfterSuccess, limit: 1 << 20)
+        #expect(sunday.batch?.fileId == idSun)
+        #expect(text(sunday.batch) == "sun\n")
+        #expect(sunday.batch?.gapBefore == false)
+    }
+
+    @Test("pump_error throttle key ignores numbers") func throttleKey() {
+        #expect(
+            TrioEventNote.throttleKey(forPumpError: "Pump Error (timeout after 12 s, attempt 3)") ==
+                TrioEventNote.throttleKey(forPumpError: "Pump Error (timeout after 7 s, attempt 4)")
+        )
+        #expect(TrioEventNote.throttleKey(forPumpError: "a") != TrioEventNote.throttleKey(forPumpError: "b"))
+    }
+
     @Test("A missed rotation is a gap") func missedRotation() {
         let logs = Logs()
         logs.create("x\n")

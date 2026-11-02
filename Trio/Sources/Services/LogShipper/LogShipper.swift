@@ -152,8 +152,9 @@ final class BaseLogShipper: LogShipper, Injectable {
         static let stateKey = "LogShipper.state"
         static let limitKey = "LogShipper.limit"
         static let installIdKey = "LogShipper.installId"
-        /// Loop cycles are 5 min; a little less so a slightly early cycle still ships.
-        static let minInterval: TimeInterval = 4.5 * 60
+        /// Loop cycles are 5 min and the two triggers of one cycle coalesce while sleeping; this only
+        /// stops a second shipment right after one (e.g. a glucose backfill after the loop end).
+        static let minInterval: TimeInterval = 60
         /// After a loop ends: lets DanaKit's log writer (background queue) flush the cycle's last lines.
         static let settleDelay: TimeInterval = 10
         /// After a glucose store: long enough for the loop that normally follows the reading to end
@@ -192,6 +193,8 @@ final class BaseLogShipper: LogShipper, Injectable {
     private var pendingToken = UUID()
     private var pendingDue: Date = .distantPast
     private var sleeping = false
+    /// A forced request (Save / Send now) that arrived while a shipment was running: runs right after it.
+    private var rerunRequested = false
     private var lastAttempt: Date = .distantPast
     private var backoffInterval: TimeInterval?
     private var backoffUntil: Date?
@@ -284,9 +287,14 @@ final class BaseLogShipper: LogShipper, Injectable {
                 if now.timeIntervalSince(lastAttempt) < Config.minInterval { return false }
             }
             if pendingShipment != nil {
-                // A shipment that is already running is never cancelled. A sleeping one is replaced
-                // only by an earlier (or a forced) request, so a loop end wins over the fallback.
-                guard sleeping, force || due < pendingDue else { return false }
+                // A shipment that is already running is never cancelled (a forced request runs
+                // after it). A sleeping one is replaced only by an earlier (or a forced) request,
+                // so a loop end wins over the fallback.
+                if !sleeping {
+                    if force { rerunRequested = true }
+                    return false
+                }
+                guard force || due < pendingDue else { return false }
                 pendingShipment?.cancel()
             }
             let token = UUID()
@@ -318,10 +326,15 @@ final class BaseLogShipper: LogShipper, Injectable {
     }
 
     private func finishShipping(_ token: UUID) {
-        lock.withLock {
-            if token == pendingToken {
-                pendingShipment = nil
-            }
+        let rerun: Bool = lock.withLock {
+            guard token == pendingToken else { return false }
+            pendingShipment = nil
+            let rerun = rerunRequested
+            rerunRequested = false
+            return rerun
+        }
+        if rerun {
+            requestShipment(force: true, delay: 0)
         }
     }
 
@@ -354,8 +367,11 @@ final class BaseLogShipper: LogShipper, Injectable {
         if !force, !config.enabled {
             return // disabled while this shipment slept: nothing to report
         }
-        guard let url = URL(string: config.url), !config.token.isEmpty else {
-            publishStatus { $0.lastError = "Not configured" }
+        // https only: the body is the child's health data plus the token.
+        guard let url = URL(string: config.url), url.scheme?.lowercased() == "https", url.host != nil,
+              !config.token.isEmpty
+        else {
+            publishStatus { $0.lastError = "Not configured (needs an https:// URL and a token)" }
             return
         }
 

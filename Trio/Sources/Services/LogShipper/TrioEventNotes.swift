@@ -54,6 +54,11 @@ enum TrioEventNote {
         return text
     }
 
+    /// Same error with different numbers (timeouts, counts, codes) is the same error for the throttle.
+    static func throttleKey(forPumpError text: String) -> String {
+        "pump_error:" + sanitize(text).replacingOccurrences(of: "[0-9]+", with: "#", options: .regularExpression)
+    }
+
     private static func decimal(_ value: Decimal) -> String {
         NSDecimalNumber(decimal: value).description(withLocale: Locale(identifier: "en_US_POSIX"))
     }

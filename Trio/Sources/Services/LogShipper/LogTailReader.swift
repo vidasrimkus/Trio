@@ -91,6 +91,10 @@ struct LogTailReader {
                     return read(from: previousURL, info: previous, state: state, gap: gap, limit: limit, final: true)
                 }
                 state = StreamState(fileId: current.id, offset: 0)
+            } else if let previous = Self.info(of: previousURL), previous.size > 0 {
+                // Two rotations missed: the whole previous file is still on disk — ship it first.
+                state = StreamState(fileId: previous.id, offset: 0)
+                return read(from: previousURL, info: previous, state: state, gap: true, limit: limit, final: true)
             } else {
                 state = StreamState(fileId: current.id, offset: 0)
                 gap = true
@@ -115,6 +119,12 @@ struct LogTailReader {
             return waiting
         }
         defer { try? handle.close() }
+
+        // The daily rotation may have run between `info(of:)` and the open: then the handle is a
+        // different file and the offsets would not belong to `info.id` — wait for the next call.
+        guard Self.info(of: url)?.id == info.id else {
+            return waiting
+        }
 
         guard (try? handle.seek(toOffset: UInt64(state.offset))) != nil,
               var data = try? handle.read(upToCount: limit), !data.isEmpty

@@ -52,7 +52,7 @@ struct LogShipperConfigView: View {
             Section(header: Text("Status")) {
                 row("Last attempt", status.lastAttempt.map(time) ?? "—")
                 row("Last success", status.lastSuccess.map(time) ?? "—")
-                row("Last shipment", status.lastSentBytes > 0 ? "\(status.lastSentBytes / 1024) KB compressed" : "—")
+                row("Last shipment", status.lastSentBytes > 0 ? "\(bytes(status.lastSentBytes)) compressed" : "—")
                 if status.authFailed {
                     row("Paused", "server refused the token")
                 } else if let until = status.backoffUntil, until > Date() {
@@ -86,5 +86,9 @@ struct LogShipperConfigView: View {
 
     private func time(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .standard)
+    }
+
+    private func bytes(_ count: Int) -> String {
+        count >= 1024 ? "\(count / 1024) KB" : "\(count) B"
     }
 }

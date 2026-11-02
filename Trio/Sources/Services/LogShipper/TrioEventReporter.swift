@@ -73,9 +73,24 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
 
     private func errorOccurred(_ error: Error) {
         let text = error.localizedDescription
+        // Only the errors `enactBolus` itself sends can belong to a manual bolus failure
+        // (`pumpError` from the pump, `invalidPumpState` from `verifyStatus`). Anything else
+        // (glucose, algorithm, manual temp) goes out at once and never displaces a held one.
+        let pairable: Bool = {
+            guard let apsError = error as? APSError else { return false }
+            switch apsError {
+            case .invalidPumpState,
+                 .pumpError: return true
+            default: return false
+            }
+        }()
         queue.async {
-            // A second error inside the hold (e.g. SMB enact failure, then the loop's own failure)
-            // must not swallow the first one.
+            guard pairable else {
+                self.emit(.pumpError(error: text))
+                return
+            }
+            // A second pairable error inside the hold (e.g. SMB enact failure, then the loop's own
+            // failure) must not swallow the first one.
             if let previous = self.pending, previous.text != text {
                 self.emit(.pumpError(error: previous.text))
             }
@@ -93,7 +108,7 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
 
     private func emit(_ event: TrioEvent) {
         let note = TrioEventNote.format(event)
-        if case .pumpError = event, !throttle.allow(note) {
+        if case let .pumpError(text) = event, !throttle.allow(TrioEventNote.throttleKey(forPumpError: text)) {
             return
         }
         debug(.service, note)
