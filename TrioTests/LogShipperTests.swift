@@ -108,6 +108,18 @@ import Testing
         #expect(third.batch?.to == 11)
     }
 
+    @Test("A long line is never cut inside a UTF-8 sequence") func longLineUTF8() {
+        let logs = Logs()
+        logs.create("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") // 79 bytes
+        logs.append("ė" + "b" + "\n") // "ė" = 0xC4 0x97 at bytes 79-80
+        let first = logs.reader.next(state: LogTailReader.StreamState(), limit: 80) // byte 80 would split "ė"
+        #expect(first.batch?.to == 79)
+        #expect(text(first.batch)?.contains("\u{FFFD}") == false)
+        let second = logs.reader.next(state: first.stateAfterSuccess, limit: 80)
+        #expect(text(second.batch) == "ėb\n")
+        #expect(second.batch?.to == 83)
+    }
+
     @Test("After a rotation the previous file is finished first") func rotation() {
         let logs = Logs()
         logs.create("day1-a\n")
@@ -211,12 +223,10 @@ import Testing
         #expect(waiting.stateAfterSuccess.gapPending == true)
         #expect(waiting.stateAfterSuccess.offset == 0)
 
-        // The state round-trips through JSON (UserDefaults) and old states without the key still decode.
+        // The state round-trips through JSON (UserDefaults).
         let encoded = try JSONEncoder().encode(waiting.stateAfterSuccess)
         let decoded = try JSONDecoder().decode(LogTailReader.StreamState.self, from: encoded)
         #expect(decoded == waiting.stateAfterSuccess)
-        let legacy = try JSONDecoder().decode(LogTailReader.StreamState.self, from: Data(#"{"fileId":"1:2","offset":3}"#.utf8))
-        #expect(legacy == LogTailReader.StreamState(fileId: "1:2", offset: 3))
 
         logs.append("x\n")
         let shipped = logs.reader.next(state: decoded, limit: 1 << 20)

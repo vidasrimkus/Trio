@@ -40,9 +40,12 @@ struct LogShipperConfigView: View {
 
             Section {
                 Button("Save") {
-                    let config = LogShipperConfig(enabled: enabled, url: url, token: token)
-                    shipper.save(config)
-                    saved = config
+                    shipper.save(LogShipperConfig(enabled: enabled, url: url, token: token))
+                    // Re-read what is actually stored (trimmed; a Keychain write can fail silently).
+                    saved = shipper.config
+                    url = saved.url
+                    token = saved.token
+                    enabled = saved.enabled
                 }
                 .disabled(!isDirty)
                 Button("Send now") { shipper.shipNow() }

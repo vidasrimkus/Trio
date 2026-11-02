@@ -24,19 +24,6 @@ struct LogTailReader {
             self.offset = offset
             self.gapPending = gapPending
         }
-
-        private enum CodingKeys: String, CodingKey {
-            case fileId
-            case offset
-            case gapPending
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            fileId = try container.decodeIfPresent(String.self, forKey: .fileId)
-            offset = try container.decodeIfPresent(Int.self, forKey: .offset) ?? 0
-            gapPending = try container.decodeIfPresent(Bool.self, forKey: .gapPending) ?? false
-        }
     }
 
     struct Batch: Equatable {
@@ -137,6 +124,13 @@ struct LogTailReader {
         } else if data.count < limit, !final {
             // A line still being written — wait for its newline.
             return waiting
+        } else if data.count == limit {
+            // A line longer than the limit: never cut inside a UTF-8 sequence — the lead byte and
+            // its continuation bytes (0x80...0xBF) go together into the next batch.
+            var cut = data.endIndex
+            while cut > data.startIndex, data[cut - 1] & 0xC0 == 0x80 { cut -= 1 }
+            if cut > data.startIndex, data[cut - 1] & 0x80 != 0 { cut -= 1 }
+            if cut > data.startIndex { data = data.prefix(cut - data.startIndex) }
         }
 
         let batch = Batch(

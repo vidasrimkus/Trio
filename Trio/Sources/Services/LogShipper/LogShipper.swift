@@ -193,8 +193,9 @@ final class BaseLogShipper: LogShipper, Injectable {
     private var pendingToken = UUID()
     private var pendingDue: Date = .distantPast
     private var sleeping = false
-    /// A forced request (Save / Send now) that arrived while a shipment was running: runs right after it.
-    private var rerunRequested = false
+    /// A request that arrived while a shipment was running: runs right after it (nil = none;
+    /// the value is its `force`). A loop end during a long shipment is deferred, never dropped.
+    private var rerunRequested: Bool?
     private var lastAttempt: Date = .distantPast
     private var backoffInterval: TimeInterval?
     private var backoffUntil: Date?
@@ -245,8 +246,9 @@ final class BaseLogShipper: LogShipper, Injectable {
 
     func save(_ config: LogShipperConfig) {
         let wasEnabled = defaults.bool(forKey: Config.enabledKey)
-        keychain.setValue(config.url, forKey: Config.urlKey)
-        keychain.setValue(config.token, forKey: Config.tokenKey)
+        // Pasted values often carry a trailing newline; "Bearer abc\n" is a 401.
+        keychain.setValue(config.url.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Config.urlKey)
+        keychain.setValue(config.token.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Config.tokenKey)
         defaults.set(config.enabled, forKey: Config.enabledKey)
         defaults.removeObject(forKey: Config.limitKey)
         lock.withLock {
@@ -254,11 +256,14 @@ final class BaseLogShipper: LogShipper, Injectable {
             backoffUntil = nil
             backoffInterval = nil
             limit = Config.defaultLimit
-            if !config.enabled, sleeping {
-                pendingShipment?.cancel()
-                pendingShipment = nil
-                sleeping = false
-                pendingToken = UUID()
+            if !config.enabled {
+                rerunRequested = nil
+                if sleeping {
+                    pendingShipment?.cancel()
+                    pendingShipment = nil
+                    sleeping = false
+                    pendingToken = UUID()
+                }
             }
         }
         publishStatus { $0.lastError = nil }
@@ -279,19 +284,21 @@ final class BaseLogShipper: LogShipper, Injectable {
     private func requestShipment(force: Bool, delay: TimeInterval) {
         guard force || defaults.bool(forKey: Config.enabledKey) else { return }
         let now = Date()
-        let due = now.addingTimeInterval(delay)
+        var delay = delay
         let scheduled: Bool = lock.withLock {
             if !force {
                 if authFailed { return false }
                 if let until = backoffUntil, until > now { return false }
-                if now.timeIntervalSince(lastAttempt) < Config.minInterval { return false }
+                // Too soon after the last shipment: defer to the end of the interval, don't drop.
+                delay = max(delay, lastAttempt.addingTimeInterval(Config.minInterval).timeIntervalSince(now))
             }
+            let due = now.addingTimeInterval(delay)
             if pendingShipment != nil {
-                // A shipment that is already running is never cancelled (a forced request runs
-                // after it). A sleeping one is replaced only by an earlier (or a forced) request,
-                // so a loop end wins over the fallback.
+                // A shipment that is already running is never cancelled: the request runs after
+                // it. A sleeping one is replaced only by an earlier (or a forced) request, so a
+                // loop end wins over the fallback.
                 if !sleeping {
-                    if force { rerunRequested = true }
+                    rerunRequested = (rerunRequested ?? false) || force
                     return false
                 }
                 guard force || due < pendingDue else { return false }
@@ -326,15 +333,15 @@ final class BaseLogShipper: LogShipper, Injectable {
     }
 
     private func finishShipping(_ token: UUID) {
-        let rerun: Bool = lock.withLock {
-            guard token == pendingToken else { return false }
+        let rerun: Bool? = lock.withLock {
+            guard token == pendingToken else { return nil }
             pendingShipment = nil
             let rerun = rerunRequested
-            rerunRequested = false
+            rerunRequested = nil
             return rerun
         }
-        if rerun {
-            requestShipment(force: true, delay: 0)
+        if let force = rerun {
+            requestShipment(force: force, delay: force ? 0 : Config.settleDelay)
         }
     }
 
@@ -399,8 +406,8 @@ final class BaseLogShipper: LogShipper, Injectable {
         let payload = LogShipmentPayload(
             installId: installId,
             app: LogShipmentPayload.App(
-                version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
-                build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?",
+                version: Bundle.main.releaseVersionNumber ?? "?",
+                build: Bundle.main.buildVersionNumber ?? "?",
                 sha: BuildDetails.shared.trioCommitSHA
             ),
             sentAt: ISO8601DateFormatter().string(from: now),
