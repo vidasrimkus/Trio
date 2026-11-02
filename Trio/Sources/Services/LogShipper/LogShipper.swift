@@ -228,7 +228,7 @@ final class BaseLogShipper: LogShipper, Injectable {
             .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
             .store(in: &subscriptions)
 
-        NotificationCenter.default.publisher(for: .logShipperActivity)
+        Foundation.NotificationCenter.default.publisher(for: .logShipperActivity)
             .sink { [weak self] _ in self?.requestShipment(force: false, delay: Config.settleDelay) }
             .store(in: &subscriptions)
     }
