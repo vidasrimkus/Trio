@@ -22,12 +22,48 @@ change how much insulin is delivered. Read `CUSTOMIZATIONS.md` before any work.
    percentage of DanaKit's copy, needs whole-hour segments, and truncates some rates. After every Dana
    (re)connection the schedule must be saved from Trio by hand (procedure in §5).
 7. Tests run on GitHub, not locally (no Swift toolchain on the Windows machine):
-   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`. Before any merge proposal:
-   green tests + a reviewer pass on the final commit.
+   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>` (add
+   `-f only_testing=TrioTests/<Suite>` while iterating). Before any merge proposal: green **full** tests
+   (no `only_testing`) + a reviewer pass on the final commit. Caches are written only by runs on `main`
+   (`CUSTOMIZATIONS.md` §2).
 8. **The reviewer runs at most twice per feature.** After the second round only findings that can
    (a) break Trio or disturb dosing, (b) lose or corrupt data, or (c) leak secrets are fixed before a
    build; everything else goes into a TODO file in `docs/` with a one-line reason (e.g.
    `docs/log-shipper-todo.md`). Small fixes are grouped into one commit and one push, never one per finding.
+
+## Trio gotchas
+
+Rule for this list: every CI failure whose cause would repeat gets a line here, one line each, with the file.
+
+- `NotificationCenter` is Trio's own protocol (`Trio/Sources/Services/Notifications/NotificationCenter.swift`,
+  registered in `ServiceAssembly.swift:7`); `NotificationCenter.default` does not compile — write
+  `Foundation.NotificationCenter.default`.
+- The global `error(_:_:)` in `Trio/Sources/Logger/Logger.swift:64` is `-> Never` and calls `fatalError`; it is a
+  crash, not a log line — use `warning(...)` / `debug(...)`.
+- `TrioSettings` has a hand-written `init(from:)` (`Trio/Sources/Models/TrioSettings.swift:129`, one `try?` per key);
+  do not add our settings there — Keychain / `UserDefaults` in our own module (see `BaseLogShipper.Config`).
+- `.gitmodules` points LibreCRKit, DanaKit, OmnipodKit, LoopKit, LoopAlgorithm at `vidasrimkus/*` forks with the
+  upstream pins (`CUSTOMIZATIONS.md` §9); after pulling that change run `git submodule sync --recursive`; the full
+  dependency list is `docs/dependencies.md`.
+- Tests and builds run only on GitHub (no Swift toolchain on the Windows machine); `unit_tests.yml` has
+  `cancel-in-progress`, so a new dispatch on the same branch cancels the running one — "cancelled" is not a failure.
+- New `.swift` files must be registered in `Trio.xcodeproj/project.pbxproj` by hand (file reference, build file,
+  group, Sources phase); only `Preview Content` and `LiveActivity/Views` are synchronized folders (files there must
+  NOT be listed by hand). Copy the pattern of the previous `[vidas]` commit.
+- Tests are Swift Testing (`import Testing`, `@Suite`, `#expect`); a `mutating` call inside `#expect` is fragile —
+  compute into a `let` first.
+- `startBackgroundTask(withName:)` in `Trio/Sources/Helpers/BackgroundTask+Helper.swift:21` captures `.invalid`
+  and never ends the task on expiry; use the `APSManager.loop()` pattern (`var taskID`, handler ends it).
+- `uploadNoteTreatment(note:)` (`NightscoutManager.swift`) does not retry and is a no-op while upload is disabled;
+  anything that must survive goes to the log as well.
+- `Keychain` has two `getValue`/`setValue` overload families (`KeyValueStorage` optional vs `Result`); mirror the
+  call shapes in `NightscoutConfigStateModel.swift` (`keychain.getValue(String.self, forKey:) ?? ""`).
+- `NavigationLink(destination:)` in `SettingsRootView.swift` builds the destination on every Settings render;
+  nothing expensive in a destination view's `init`.
+- Capturing a mutable local in a `Task { }` is a compile error; a `Task` sleeping without its own
+  `beginBackgroundTask` is suspended with the process — take the task before the sleep.
+- On this Windows machine `rg` is not on PATH; the Grep tool can fail with `ENOENT rg` — `git grep` in Bash
+  always works; `node -I` does not exist.
 
 ## Upstream update procedure
 
