@@ -158,6 +158,28 @@ import Testing
         #expect(text(result.batch) == "z\n")
     }
 
+    @Test("A gap found on an empty file is carried to the next batch") func gapSurvivesEmptyFile() throws {
+        let logs = Logs()
+        logs.create("")
+        let waiting = logs.reader.next(state: LogTailReader.StreamState(fileId: "999:1", offset: 10), limit: 1 << 20)
+        #expect(waiting.batch == nil)
+        #expect(waiting.stateAfterSuccess.gapPending == true)
+        #expect(waiting.stateAfterSuccess.offset == 0)
+
+        // The state round-trips through JSON (UserDefaults) and old states without the key still decode.
+        let encoded = try JSONEncoder().encode(waiting.stateAfterSuccess)
+        let decoded = try JSONDecoder().decode(LogTailReader.StreamState.self, from: encoded)
+        #expect(decoded == waiting.stateAfterSuccess)
+        let legacy = try JSONDecoder().decode(LogTailReader.StreamState.self, from: Data(#"{"fileId":"1:2","offset":3}"#.utf8))
+        #expect(legacy == LogTailReader.StreamState(fileId: "1:2", offset: 3))
+
+        logs.append("x\n")
+        let shipped = logs.reader.next(state: decoded, limit: 1 << 20)
+        #expect(shipped.batch?.gapBefore == true)
+        #expect(shipped.batch?.from == 0)
+        #expect(shipped.stateAfterSuccess.gapPending == false)
+    }
+
     @Test("No log file yet: nothing to ship, state untouched") func missingFile() {
         let logs = Logs()
         let state = LogTailReader.StreamState(fileId: "1:2", offset: 3)
@@ -250,6 +272,8 @@ import Testing
         #expect(!repeated)
         #expect(other)
         #expect(later)
+        // Entries older than the window are evicted, so the table cannot grow without bound.
+        #expect(throttle.count == 1)
     }
 
     // MARK: - Wire format

@@ -176,28 +176,21 @@ final class BaseLogShipper: LogShipper, Injectable {
         let reader: LogTailReader
     }
 
-    private actor Gate {
-        private var busy = false
-        func tryEnter() -> Bool {
-            if busy { return false }
-            busy = true
-            return true
-        }
-
-        func leave() { busy = false }
-    }
+    private typealias Shipment = (stream: String, batch: LogTailReader.Batch, next: LogTailReader.StreamState)
 
     let status = CurrentValueSubject<LogShipperStatus, Never>(LogShipperStatus())
 
     private let defaults = UserDefaults.standard
     private let log = OSLog(subsystem: Bundle.main.bundleIdentifier ?? "Trio", category: "LogShipper")
-    private let gate = Gate()
-    private let lock = NSLock()
     private var streams: [LogStream] = []
     private var subscriptions = Set<AnyCancellable>()
 
-    // Guarded by `lock`.
+    /// All scheduling state lives behind this one lock. One shipment exists at a time: it is
+    /// `sleeping` (settle delay, may be replaced by a forced request) or shipping (never cancelled).
+    private let lock = NSLock()
     private var pendingShipment: Task<Void, Never>?
+    private var pendingToken = UUID()
+    private var sleeping = false
     private var lastAttempt: Date = .distantPast
     private var backoffInterval: TimeInterval?
     private var backoffUntil: Date?
@@ -271,32 +264,56 @@ final class BaseLogShipper: LogShipper, Injectable {
     private func requestShipment(force: Bool, delay: TimeInterval) {
         guard force || defaults.bool(forKey: Config.enabledKey) else { return }
         let now = Date()
-        let allowed: Bool = lock.withLock {
+        let scheduled: Bool = lock.withLock {
             if !force {
                 if authFailed { return false }
                 if let until = backoffUntil, until > now { return false }
                 if now.timeIntervalSince(lastAttempt) < Config.minInterval { return false }
             }
-            pendingShipment?.cancel()
+            if pendingShipment != nil {
+                // A sleeping shipment ships soon anyway; a forced request restarts it without the
+                // delay. A shipment that is already running is never cancelled.
+                guard sleeping, force else { return false }
+                pendingShipment?.cancel()
+            }
+            let token = UUID()
+            pendingToken = token
+            sleeping = true
             pendingShipment = Task { [weak self] in
                 if delay > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
-                guard !Task.isCancelled else { return }
-                await self?.ship(force: force)
+                guard let self, self.startShipping(token) else { return }
+                await self.ship(force: force)
+                self.finishShipping(token)
             }
             return true
         }
-        if allowed {
+        if scheduled {
             os_log("Shipment scheduled in %.0f s (force: %{public}@)", log: log, type: .debug, delay, String(force))
+        }
+    }
+
+    /// False when this task was replaced while it slept.
+    private func startShipping(_ token: UUID) -> Bool {
+        lock.withLock {
+            guard token == pendingToken, !Task.isCancelled else { return false }
+            sleeping = false
+            return true
+        }
+    }
+
+    private func finishShipping(_ token: UUID) {
+        lock.withLock {
+            if token == pendingToken {
+                pendingShipment = nil
+            }
         }
     }
 
     // MARK: - Shipping
 
     private func ship(force: Bool) async {
-        guard await gate.tryEnter() else { return }
-
         // Same shape as APSManager.loop(): the handler runs on the main thread.
         var taskID: UIBackgroundTaskIdentifier = .invalid
         taskID = await UIApplication.shared.beginBackgroundTask(withName: "LogShipper") {
@@ -312,7 +329,6 @@ final class BaseLogShipper: LogShipper, Injectable {
             await UIApplication.shared.endBackgroundTask(taskID)
             taskID = .invalid
         }
-        await gate.leave()
     }
 
     private func performShipment(force: Bool) async {
@@ -326,22 +342,23 @@ final class BaseLogShipper: LogShipper, Injectable {
             return
         }
 
-        lock.withLock { lastAttempt = Date() }
-        publishStatus { $0.lastAttempt = Date() }
+        let now = Date()
+        lock.withLock { lastAttempt = now }
+        publishStatus { $0.lastAttempt = now }
 
         var states = loadStates()
         let limit = lock.withLock { self.limit }
-        var batches: [(stream: String, batch: LogTailReader.Batch, next: LogTailReader.StreamState)] = []
+        var shipments: [Shipment] = []
         for stream in streams {
             let result = stream.reader.next(state: states[stream.name] ?? LogTailReader.StreamState(), limit: limit)
             if let batch = result.batch {
-                batches.append((stream: stream.name, batch: batch, next: result.stateAfterSuccess))
+                shipments.append((stream: stream.name, batch: batch, next: result.stateAfterSuccess))
             } else {
                 states[stream.name] = result.stateAfterSuccess
             }
         }
         saveStates(states)
-        guard !batches.isEmpty else {
+        guard !shipments.isEmpty else {
             os_log("Nothing new", log: log, type: .debug)
             return
         }
@@ -353,8 +370,8 @@ final class BaseLogShipper: LogShipper, Injectable {
                 build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?",
                 sha: BuildDetails.shared.trioCommitSHA
             ),
-            sentAt: ISO8601DateFormatter().string(from: Date()),
-            batches: batches.map {
+            sentAt: ISO8601DateFormatter().string(from: now),
+            batches: shipments.map {
                 LogShipmentPayload.Batch(
                     stream: $0.stream,
                     fileId: $0.batch.fileId,
@@ -395,26 +412,33 @@ final class BaseLogShipper: LogShipper, Injectable {
             outcome = .retryLater(after: nil, message: error.localizedDescription)
         }
 
-        apply(outcome, batches: batches, states: &states, sentBytes: body.count)
+        apply(outcome, shipments: shipments, states: &states, sentBytes: body.count)
         saveStates(states)
     }
 
     private func apply(
         _ outcome: LogShipperOutcome,
-        batches: [(stream: String, batch: LogTailReader.Batch, next: LogTailReader.StreamState)],
+        shipments: [Shipment],
         states: inout [String: LogTailReader.StreamState],
         sentBytes: Int
     ) {
         switch outcome {
         case let .accepted(items):
+            var advanced = 0
             for item in items {
-                guard let sent = batches.first(where: { $0.stream == item.stream && $0.batch.fileId == item.fileId }),
+                guard let sent = shipments.first(where: { $0.stream == item.stream && $0.batch.fileId == item.fileId }),
                       item.to > sent.batch.from
                 else { continue }
-                states[item.stream] = LogTailReader.StreamState(
-                    fileId: item.fileId,
-                    offset: min(item.to, sent.batch.to)
-                )
+                var next = sent.next
+                next.offset = min(item.to, sent.batch.to)
+                states[item.stream] = next
+                advanced += 1
+            }
+            guard advanced > 0 else {
+                // A 2xx that moves nothing would re-send the same bytes forever behind a green status.
+                apply(.retryLater(after: nil, message: "HTTP 2xx accepted none of \(shipments.count) batch(es)"),
+                      shipments: shipments, states: &states, sentBytes: sentBytes)
+                return
             }
             let leftBackoff: Bool = lock.withLock {
                 let had = backoffUntil != nil
@@ -433,7 +457,7 @@ final class BaseLogShipper: LogShipper, Injectable {
                 $0.backoffUntil = nil
                 $0.authFailed = false
             }
-            os_log("Shipped %d batch(es), %d bytes", log: log, type: .info, items.count, sentBytes)
+            os_log("Shipped %d batch(es), %d bytes", log: log, type: .info, advanced, sentBytes)
 
         case .unauthorized:
             lock.withLock { authFailed = true }
@@ -488,9 +512,12 @@ final class BaseLogShipper: LogShipper, Injectable {
         }
     }
 
+    /// Read-modify-write of `status.value` under `lock`, so concurrent updates keep each other's fields.
     private func publishStatus(_ change: (inout LogShipperStatus) -> Void) {
-        var value = status.value
-        change(&value)
-        status.send(value)
+        lock.withLock {
+            var value = status.value
+            change(&value)
+            status.send(value)
+        }
     }
 }

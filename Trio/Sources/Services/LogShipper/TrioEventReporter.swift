@@ -24,8 +24,9 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
 
     enum Config {
         static let throttleWindow: TimeInterval = 30 * 60
-        static let holdInterval: TimeInterval = 2
-        static let pairingWindow: TimeInterval = 3
+        /// How long a `lastError` waits for a `bolusDidFail()`; the pairing window is the same value.
+        static let holdInterval: TimeInterval = 3
+        static let pairingWindow: TimeInterval = holdInterval
     }
 
     private let queue = DispatchQueue(label: "BaseTrioEventReporter.queue")
@@ -68,6 +69,11 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
     private func errorOccurred(_ error: Error) {
         let text = error.localizedDescription
         queue.async {
+            // A second error inside the hold (e.g. SMB enact failure, then the loop's own failure)
+            // must not swallow the first one.
+            if let previous = self.pending, previous.text != text {
+                self.emit(.pumpError(error: previous.text))
+            }
             self.pending = (text, Date())
             self.generation += 1
             let generation = self.generation

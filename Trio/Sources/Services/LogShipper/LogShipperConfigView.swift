@@ -9,11 +9,11 @@ struct LogShipperConfigView: View {
     @State private var token = ""
     @State private var enabled = false
     @State private var status = LogShipperStatus()
-    @State private var savedAt: Date?
+    /// What is stored right now (Keychain is read once on appear and after every save, not per render).
+    @State private var saved = LogShipperConfig()
 
     private var isDirty: Bool {
-        let current = shipper.config
-        return current.url != url || current.token != token || current.enabled != enabled
+        saved.url != url || saved.token != token || saved.enabled != enabled
     }
 
     var body: some View {
@@ -40,8 +40,9 @@ struct LogShipperConfigView: View {
 
             Section {
                 Button("Save") {
-                    shipper.save(LogShipperConfig(enabled: enabled, url: url, token: token))
-                    savedAt = Date()
+                    let config = LogShipperConfig(enabled: enabled, url: url, token: token)
+                    shipper.save(config)
+                    saved = config
                 }
                 .disabled(!isDirty)
                 Button("Send now") { shipper.shipNow() }
@@ -66,6 +67,7 @@ struct LogShipperConfigView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             let config = shipper.config
+            saved = config
             url = config.url
             token = config.token
             enabled = config.enabled

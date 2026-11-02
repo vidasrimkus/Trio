@@ -263,3 +263,6 @@ before the next build.** Goes away with the upgrade to v1.0.2 (separate task).
 The other 11 submodules and all SPM packages still point at their upstream owners (decision 2026-11-02). The full
 list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor checks it daily. **`main` needs the same
 `.gitmodules` URLs before the next build.** On an upstream upgrade, keep our URLs and move the pinned commits.
+
+Existing clones keep the old URLs in `.git/config` until `git submodule sync --recursive` is run once after
+pulling this change (CI and the browser build clone fresh, so they are unaffected).

@@ -79,8 +79,12 @@ struct EventThrottle {
         self.window = window
     }
 
+    /// Keys still inside the window (tests).
+    var count: Int { lastSent.count }
+
     mutating func allow(_ key: String, at now: Date = Date()) -> Bool {
-        if let last = lastSent[key], now.timeIntervalSince(last) < window {
+        lastSent = lastSent.filter { now.timeIntervalSince($0.value) < window }
+        if lastSent[key] != nil {
             return false
         }
         lastSent[key] = now

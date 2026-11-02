@@ -16,10 +16,26 @@ struct LogTailReader {
     struct StreamState: Codable, Equatable {
         var fileId: String?
         var offset: Int
+        /// A gap was detected but nothing could be shipped yet (empty file); the next batch carries it.
+        var gapPending: Bool
 
-        init(fileId: String? = nil, offset: Int = 0) {
+        init(fileId: String? = nil, offset: Int = 0, gapPending: Bool = false) {
             self.fileId = fileId
             self.offset = offset
+            self.gapPending = gapPending
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case fileId
+            case offset
+            case gapPending
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            fileId = try container.decodeIfPresent(String.self, forKey: .fileId)
+            offset = try container.decodeIfPresent(Int.self, forKey: .offset) ?? 0
+            gapPending = try container.decodeIfPresent(Bool.self, forKey: .gapPending) ?? false
         }
     }
 
@@ -58,7 +74,7 @@ struct LogTailReader {
         }
 
         var state = state
-        var gap = false
+        var gap = state.gapPending
 
         if state.fileId == nil {
             state = StreamState(fileId: current.id, offset: 0)
@@ -89,24 +105,27 @@ struct LogTailReader {
     }
 
     private func read(from url: URL, info: FileInfo, state: StreamState, gap: Bool, limit: Int) -> Result {
+        // Nothing to ship yet: keep the (normalized) state and remember the gap for the next batch.
+        let waiting = Result(batch: nil, stateAfterSuccess: StreamState(fileId: state.fileId, offset: state.offset, gapPending: gap))
+
         guard limit > 0, state.offset < info.size,
               let handle = try? FileHandle(forReadingFrom: url)
         else {
-            return Result(batch: nil, stateAfterSuccess: state)
+            return waiting
         }
         defer { try? handle.close() }
 
         guard (try? handle.seek(toOffset: UInt64(state.offset))) != nil,
               var data = try? handle.read(upToCount: limit), !data.isEmpty
         else {
-            return Result(batch: nil, stateAfterSuccess: state)
+            return waiting
         }
 
         if let newline = data.lastIndex(of: 0x0A) {
             data = data.prefix(newline - data.startIndex + 1)
         } else if data.count < limit {
             // A line still being written — wait for its newline.
-            return Result(batch: nil, stateAfterSuccess: state)
+            return waiting
         }
 
         let batch = Batch(
@@ -116,6 +135,6 @@ struct LogTailReader {
             gapBefore: gap,
             data: Data(data)
         )
-        return Result(batch: batch, stateAfterSuccess: StreamState(fileId: info.id, offset: batch.to))
+        return Result(batch: batch, stateAfterSuccess: StreamState(fileId: info.id, offset: batch.to, gapPending: false))
     }
 }
