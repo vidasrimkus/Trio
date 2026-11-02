@@ -22,8 +22,10 @@ change how much insulin is delivered. Read `CUSTOMIZATIONS.md` before any work.
    percentage of DanaKit's copy, needs whole-hour segments, and truncates some rates. After every Dana
    (re)connection the schedule must be saved from Trio by hand (procedure in §5).
 7. Tests run on GitHub, not locally (no Swift toolchain on the Windows machine):
-   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`. Before any merge proposal:
-   green tests + a reviewer pass on the final commit.
+   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>` (add
+   `-f only_testing=TrioTests/<Suite>` while iterating). Before any merge proposal: green **full** tests
+   (no `only_testing`) + a reviewer pass on the final commit. Caches are written only by runs on `main`
+   (`CUSTOMIZATIONS.md` §2).
 8. **The reviewer runs at most twice per feature.** After the second round only findings that can
    (a) break Trio or disturb dosing, (b) lose or corrupt data, or (c) leak secrets are fixed before a
    build; everything else goes into a TODO file in `docs/` with a one-line reason (e.g.

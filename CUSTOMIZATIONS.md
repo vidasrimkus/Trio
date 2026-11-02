@@ -41,8 +41,20 @@ Encryption, the timestamp window, the algorithm (`OpenAPS/`, `OpenAPSSwift/`),
 
 `.github/workflows/unit_tests.yml`: added `workflow_dispatch`; removed
 `if: github.repository_owner == 'nightscout'` from both jobs (`algorithm-package`, `test`).
-Nothing else in the workflow changed. Run it with
-`gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`.
+Run it with `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch>`.
+
+**Caches (branch `chore/ci-and-gotchas`, 2026-11-02).** Upstream saves its DerivedData / SPM / BuildTools caches only on
+`push` to `dev`; this fork has no `dev` and runs only `workflow_dispatch`, so for two months no cache was ever written
+(every run cold, ≈ 20 min). Changes, all marked `[vidas]` in the file:
+- caches are also saved by `workflow_dispatch` runs **on `main`** (`github.ref == 'refs/heads/main'`); feature
+  branches restore them through the `restore-keys` prefixes and never write (one ≈ 5.4 GB baseline, 10 GB repo limit);
+- the Xcode/Swift version (`xcodebuild -version`) is part of every cache key;
+- the informational "List available simulators" step (43 s) is gone;
+- input `only_testing` (e.g. `TrioTests/LogShipperTests`) runs one target/suite:
+  `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch> -f only_testing=TrioTests/LogShipperTests`.
+  The run is annotated as partial; **the full run is still required before a merge** (CLAUDE.md rule 7).
+To warm the baseline after a dependency or Xcode change: dispatch the workflow from `main` once (the next run is warm).
+`build_trio.yml` has no cache and is unchanged.
 
 ## 3. Interfaces (other systems depend on these)
 

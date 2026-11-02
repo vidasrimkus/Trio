@@ -2,6 +2,13 @@ name: zzz [DO NOT RUN] Automated unit tests
 
 on:
   workflow_dispatch:
+    inputs:
+      only_testing:
+        # [vidas] feature branches: one target/suite, e.g. TrioTests/LogShipperTests. Empty = all.
+        # The full run is still required before a merge (CLAUDE.md rule 7).
+        description: "Run only this test target/suite (xcodebuild -only-testing). Empty = all tests."
+        required: false
+        default: ""
   pull_request:
     branches:
       - dev
@@ -34,6 +41,10 @@ jobs:
       - name: Select Xcode version
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
+      # [vidas] Xcode/Swift version in the cache keys: a toolchain bump must not reuse old build state.
+      - name: Xcode version for cache key
+        run: echo "XCODE_VERSION=$(xcodebuild -version | tr '\n' ' ' | tr -s ' ' '-' | sed 's/-$//')" >> "$GITHUB_ENV"
+
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -44,9 +55,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: AlgorithmPackage/.build
-          key: ${{ runner.os }}-spm-algorithm-${{ hashFiles('AlgorithmPackage/Package.swift', 'AlgorithmPackage/Package.resolved') }}
+          key: ${{ runner.os }}-spm-algorithm-${{ env.XCODE_VERSION }}-${{ hashFiles('AlgorithmPackage/Package.swift', 'AlgorithmPackage/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-spm-algorithm-
+            ${{ runner.os }}-spm-algorithm-${{ env.XCODE_VERSION }}-
 
       - name: Show Swift version
         run: swift --version
@@ -57,11 +68,12 @@ jobs:
       - name: Save cache
         # PRs read the dev cache but never write it — avoids churning the
         # 10 GB per-repo cache limit. dev pushes refresh the shared baseline.
-        if: always() && github.event_name == 'push' && steps.spm-cache-restore.outputs.cache-hit != 'true'
+        # [vidas] this fork has no dev branch and runs only workflow_dispatch: main dispatches write the baseline.
+        if: always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.spm-cache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: AlgorithmPackage/.build
-          key: ${{ runner.os }}-spm-algorithm-${{ hashFiles('AlgorithmPackage/Package.swift', 'AlgorithmPackage/Package.resolved') }}
+          key: ${{ runner.os }}-spm-algorithm-${{ env.XCODE_VERSION }}-${{ hashFiles('AlgorithmPackage/Package.swift', 'AlgorithmPackage/Package.resolved') }}
 
       - name: Annotate algorithm package results
         if: always()
@@ -102,6 +114,10 @@ jobs:
       - name: Select Xcode version
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
+      # [vidas] Xcode/Swift version in the cache keys: a toolchain bump must not reuse old DerivedData.
+      - name: Xcode version for cache key
+        run: echo "XCODE_VERSION=$(xcodebuild -version | tr '\n' ' ' | tr -s ' ' '-' | sed 's/-$//')" >> "$GITHUB_ENV"
+
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -124,10 +140,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-dd-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-${{ github.sha }}
+          key: ${{ runner.os }}-dd-${{ env.XCODE_VERSION }}-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-dd-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-
-            ${{ runner.os }}-dd-
+            ${{ runner.os }}-dd-${{ env.XCODE_VERSION }}-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-
+            ${{ runner.os }}-dd-${{ env.XCODE_VERSION }}-
 
       # SwiftFormat is built from source by the Xcode build phase via
       # `swift run --package-path BuildTools`. Cache its build dir so that
@@ -136,12 +152,12 @@ jobs:
         uses: actions/cache@v5
         with:
           path: BuildTools/.build
-          key: ${{ runner.os }}-buildtools-${{ hashFiles('BuildTools/Package.swift', 'BuildTools/Package.resolved') }}
+          key: ${{ runner.os }}-buildtools-${{ env.XCODE_VERSION }}-${{ hashFiles('BuildTools/Package.swift', 'BuildTools/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-buildtools-
+            ${{ runner.os }}-buildtools-${{ env.XCODE_VERSION }}-
 
-      - name: List available simulators
-        run: xcrun simctl list devices available
+      # [vidas] "List available simulators" (43 s, informational) removed; the destination is fixed
+      # and a missing simulator fails the build step with the same information.
 
       # Explicit resolve so the build can run with automatic resolution off.
       # No-op when DerivedData restored warm; pinned versions only, no network
@@ -243,22 +259,32 @@ jobs:
         # dev pushes only: refreshes the shared 5.4 GB baseline (and lets the
         # compilation cache accumulate). PRs restore it warm but never re-upload
         # it, so a PR run pays no save cost and PRs don't evict each other.
-        if: always() && github.event_name == 'push' && steps.dd-restore.outputs.cache-hit != 'true'
+        # [vidas] this fork has no dev branch and runs only workflow_dispatch: main dispatches write the
+        # baseline, feature branches restore it through restore-keys and never write.
+        if: always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && steps.dd-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-dd-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-${{ github.sha }}
+          key: ${{ runner.os }}-dd-${{ env.XCODE_VERSION }}-${{ hashFiles('**/Package.resolved', '.submodule-status') }}-${{ github.sha }}
 
       - name: Run tests
         id: run_tests
+        env:
+          ONLY_TESTING: ${{ github.event.inputs.only_testing }}
         run: |
           set -o pipefail
           _start=$(date +%s)
+          # [vidas] optional filter from the workflow_dispatch input (empty = every test)
+          if [ -n "$ONLY_TESTING" ]; then
+            echo "::warning title=Partial test run::-only-testing:$ONLY_TESTING — the full suite is still required before a merge"
+            echo "⚠️ Partial run: \`-only-testing:$ONLY_TESTING\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
           xcodebuild test-without-building \
             -workspace Trio.xcworkspace \
             -scheme "Trio Tests" \
             -destination "$DESTINATION" \
             -parallel-testing-enabled NO \
+            ${ONLY_TESTING:+-only-testing:"$ONLY_TESTING"} \
             2>&1 | tee xcodebuild.log || _rc=$?
           echo "Run tests|$(( $(date +%s) - _start ))" >> "$GITHUB_WORKSPACE/.timings"
           exit ${_rc:-0}
