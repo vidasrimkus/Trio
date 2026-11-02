@@ -142,15 +142,16 @@ phone restarted). Server rule:
 
 | Always | Replacement |
 |---|---|
-| `pairingKey: <hex>` (Dana `processPairingRequest2`) | `pairingKey: [redacted]` |
+| Dana keys in every form DanaKit logs them: `pairingKey: <hex>`, `Pairing key: <hex>`, `random pairing key: <hex>`, `random sync key: <n>` (`PeripheralManager.swift` 370, 425, 456; case-insensitive) | `…: [redacted]` |
 | `Sending pairing request … Data: <hex>`, `Sending Passkey check … Data:`, `Passkey request failed … Data:` | `Data: [redacted]` |
 | `Device token updated: <APNS token>` | `[redacted]` |
 | `token=`, `secret=`, `api-secret=`, `api_secret=`, `password=`, `passkey=`, `pin=` values (query strings, case-insensitive) | `=[redacted]` |
 | `Authorization: Bearer <x>` / `Bearer <x>` (≥ 8 chars) | `Bearer [redacted]` |
 
 Around a pairing line (`Sending pairing request`, `processPairingRequest`, `Passkey`, `requesting pincode`,
-`Requested pincode`) — 20 lines before it and 150 lines after it — every `Data: <hex>` becomes
-`Data: [redacted:pairing]`; the rest of the batch keeps its packets. Residual risk: a pairing split across two
+`Requested pincode`, `encryption keys`, `security keys`) — 20 lines before it and 150 lines after it — every packet
+dump (`Data: <hex>`, `Receiving data: <hex>`, `Encoded data: <hex>`, `decrypt data: <hex>`; case-insensitive) becomes
+`…data: [redacted:pairing]`; the rest of the batch keeps its packets. Residual risk: a pairing split across two
 batches lets the second batch's first packets through; acceptable for our own server.
 
 Not redacted (needed for diagnostics): Nightscout host in URL errors, Dana `deviceName`/`bleIdentifier`, glucose and doses.

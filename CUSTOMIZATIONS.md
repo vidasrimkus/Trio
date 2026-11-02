@@ -196,7 +196,7 @@ instead of waiting for a "Share Logs" export, and get a Nightscout Note at once 
 |---|---|
 | `LogShipper.swift` | `LogShipper` protocol, `BaseLogShipper` (scheduling, HTTP, backoff, offsets in `UserDefaults`, URL/token in Keychain), wire-format types (`LogShipmentPayload`, `LogShipmentCodec`, `LogShipperResponse`, `BackoffPolicy`). |
 | `LogTailReader.swift` | Pure: next unsent bytes of a log file; follows the daily rename by `inode:creationDate`; flags gaps (missed rotation, truncation). |
-| `LogRedactor.swift` | Pure: Dana pairing key/passkey, APNS device token, query-string secrets, bearer tokens; every `Data: <hex>` within 20 lines before / 150 lines after a pairing line. |
+| `LogRedactor.swift` | Pure: Dana keys in every DanaKit form (`pairingKey:`, `Pairing key:`, `random pairing key:`, `random sync key:`), passkey packets, APNS device token, query-string secrets, bearer tokens; every packet dump (`Data:`, `Receiving data:`, `Encoded data:`) within 20 lines before / 150 lines after a pairing line. |
 | `TrioEventNotes.swift` | `TrioEvent`, the `[trio-event v1]` line format, `EventThrottle`. |
 | `TrioEventReporter.swift` | Nightscout Notes through the existing `uploadNoteTreatment`; sources `apsManager.lastError` and `BolusFailureObserver`; the same line goes into Trio's log. |
 | `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |
@@ -235,7 +235,11 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 **What is not covered / accepted.**
 - `uploadNoteTreatment` does not retry: a Note sent while offline is lost. The same line is in Trio's log, which
   the server extracts into `log_events`.
-- iOS gives no guaranteed background time; the real cadence shows in the server's `from`/`to` continuity.
+- iOS gives no guaranteed background time; the real cadence shows in the server's `from`/`to` continuity. A request
+  that would have to wait more than 25 s (inside the 60 s minimum interval) is dropped, the next trigger ships.
+- Which error belongs to a failed manual bolus is a timing heuristic (`lastError` held 3 s for `bolusDidFail()`, or
+  the most recent pump error within 30 s): a loop error in that window can be named instead. The exact fix is an
+  `error` parameter on `BolusFailureObserver.bolusDidFail()` in `APSManager` — rule 2, decision: not done.
 - A pairing split across two shipments can leak packet hex in the second one (own server, accepted).
 - The Keychain token lets its holder post junk to `/api/logs`, nothing more. Rotate it on the server and the phone
   together; a rotation on the server alone pauses shipping (401) until the phone is updated.

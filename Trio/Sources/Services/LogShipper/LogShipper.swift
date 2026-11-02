@@ -142,6 +142,7 @@ enum LogShipperResponse {
         guard let value = header?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
         let seconds: TimeInterval
         if let number = TimeInterval(value) {
+            guard number.isFinite else { return nil } // "nan" / "inf" parse as numbers
             seconds = number
         } else if let date = httpDateFormatter.date(from: value) {
             seconds = date.timeIntervalSince(now)
@@ -180,6 +181,9 @@ final class BaseLogShipper: LogShipper, Injectable {
         /// After a glucose store: inside the ~30 s of background time iOS grants. If a loop is
         /// running when it fires, it steps aside (the loop end ships); otherwise it ships.
         static let fallbackDelay: TimeInterval = 25
+        /// A deferred request that could not start inside the background grant is dropped
+        /// (the next trigger ships) rather than slept through with the process suspended.
+        static let maxDelay: TimeInterval = 25
         static let requestTimeout: TimeInterval = 15
         static let defaultLimit = 1_048_576
         static let minimumLimit = 65536
@@ -313,8 +317,10 @@ final class BaseLogShipper: LogShipper, Injectable {
             if !force {
                 if authFailed { return false }
                 if let until = backoffUntil, until > now { return false }
-                // Too soon after the last shipment: defer to the end of the interval, don't drop.
+                // Too soon after the last shipment: defer to the end of the interval, as long as
+                // that still fits in the background grant.
                 delay = max(delay, lastAttempt.addingTimeInterval(Config.minInterval).timeIntervalSince(now))
+                if delay > Config.maxDelay { return false }
             }
             let due = now.addingTimeInterval(delay)
             if pendingShipment != nil {
@@ -497,10 +503,10 @@ final class BaseLogShipper: LogShipper, Injectable {
             var advanced = 0
             for item in items {
                 guard let sent = shipments.first(where: { $0.stream == item.stream && $0.batch.fileId == item.fileId }),
-                      item.to > sent.batch.from
+                      let offset = sent.batch.lineAlignedOffset(upTo: item.to)
                 else { continue }
                 var next = sent.next
-                next.offset = min(item.to, sent.batch.to)
+                next.offset = offset
                 states[item.stream] = next
                 advanced += 1
             }

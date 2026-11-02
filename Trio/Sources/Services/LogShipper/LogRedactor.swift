@@ -3,11 +3,12 @@ import Foundation
 /// Removes secrets from log text before it leaves the phone. Applied to the decoded text only —
 /// byte offsets always refer to the raw file.
 ///
-/// Always redacted: the Dana pairing key and passkey exchange (`PeripheralManager.swift`), the APNS
-/// device token (`TrioRemoteControl+APNS.swift`), query-string secrets and bearer tokens. Around a
-/// pairing (a few lines before, the exchange after it) every `Data: <hex>` is redacted too, since
-/// the pairing packets are spread over several lines; the rest of the batch keeps its packet
-/// diagnostics.
+/// Always redacted: the Dana pairing keys in every form DanaKit logs them (`pairingKey:`,
+/// `Pairing key:`, `random pairing key:`, `random sync key:` — `PeripheralManager.swift` 370, 425,
+/// 456), the pairing/passkey packets, the APNS device token (`TrioRemoteControl+APNS.swift`),
+/// query-string secrets and bearer tokens. Around a pairing (a few lines before, the exchange
+/// after it) every packet dump (`Data:`, `Receiving data:`, `Encoded data:`, `decrypt data:`) is
+/// redacted too; the rest of the batch keeps its packet diagnostics.
 enum LogRedactor {
     static let redacted = "[redacted]"
     static let redactedPairing = "[redacted:pairing]"
@@ -16,40 +17,53 @@ enum LogRedactor {
     static let pairingLinesAfter = 150
 
     private struct Rule {
+        /// Cheap lowercase substring test before the regex runs (almost every line fails it).
+        let needle: String
         let regex: NSRegularExpression
         let template: String
 
-        init(_ pattern: String, _ template: String) {
+        init(needle: String, _ pattern: String, _ template: String) {
+            self.needle = needle
             regex = try! NSRegularExpression(pattern: pattern)
             self.template = template
+        }
+
+        func apply(to line: String, lowercased: String) -> String {
+            guard lowercased.contains(needle) else { return line }
+            let range = NSRange(line.startIndex..., in: line)
+            return regex.stringByReplacingMatches(in: line, range: range, withTemplate: template)
         }
     }
 
     private static let valueRules: [Rule] = [
-        Rule(#"(pairingKey: )\S+"#, "$1\(redacted)"),
-        Rule(#"((?:Sending pairing request|Sending Passkey check|Passkey request failed)[^\n]*?Data: )[0-9A-Fa-f]+"#, "$1\(redacted)"),
-        Rule(#"(Device token updated: )\S+"#, "$1\(redacted)"),
-        Rule(#"((?i:token|secret|api[-_]?secret|password|passkey|pin)=)[^&\s"']+"#, "$1\(redacted)"),
-        Rule(#"((?i:authorization: bearer )|(?i:bearer ))[A-Za-z0-9._~+/=-]{8,}"#, "$1\(redacted)")
+        Rule(needle: "pairing", #"(?i)((?:random )?pairing ?key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
+        Rule(needle: "sync key", #"(?i)(random sync key: )[0-9A-Za-z]+"#, "$1\(redacted)"),
+        Rule(needle: "data: ", #"(?i)((?:Sending pairing request|Sending Passkey check|Passkey request failed)[^\n]*?data: )[0-9A-Fa-f]+"#, "$1\(redacted)"),
+        Rule(needle: "device token", #"(Device token updated: )\S+"#, "$1\(redacted)"),
+        Rule(needle: "=", #"((?i:token|secret|api[-_]?secret|password|passkey|pin)=)[^&\s"']+"#, "$1\(redacted)"),
+        Rule(needle: "bearer ", #"((?i:authorization: bearer )|(?i:bearer ))[A-Za-z0-9._~+/=-]{8,}"#, "$1\(redacted)")
     ]
 
     private static let pairingMarkers = [
-        "Sending pairing request",
-        "processPairingRequest",
-        "Passkey",
+        "sending pairing request",
+        "processpairingrequest",
+        "passkey",
         "requesting pincode",
-        "Requested pincode"
+        "requested pincode",
+        "encryption keys",
+        "security keys"
     ]
 
-    private static let pairingHex = Rule(#"(Data: )[0-9A-Fa-f]{2,}"#, "$1\(redactedPairing)")
+    private static let pairingHex = Rule(needle: "data: ", #"(?i)(data: )[0-9A-Fa-f]{2,}"#, "$1\(redactedPairing)")
 
     static func redact(_ text: String) -> String {
         var lines = text.components(separatedBy: "\n")
+        let lowercased = lines.map { $0.lowercased() }
         var inPairingWindow = [Bool](repeating: false, count: lines.count)
 
         var sinceMarker = Int.max
         for i in lines.indices {
-            if isPairingMarker(lines[i]) {
+            if isPairingMarker(lowercased[i]) {
                 sinceMarker = 0
             } else if sinceMarker != Int.max {
                 sinceMarker += 1
@@ -60,7 +74,7 @@ enum LogRedactor {
         }
         var untilMarker = Int.max
         for i in lines.indices.reversed() {
-            if isPairingMarker(lines[i]) {
+            if isPairingMarker(lowercased[i]) {
                 untilMarker = 0
             } else if untilMarker != Int.max {
                 untilMarker += 1
@@ -72,21 +86,16 @@ enum LogRedactor {
 
         for i in lines.indices {
             for rule in valueRules {
-                lines[i] = apply(rule, to: lines[i])
+                lines[i] = rule.apply(to: lines[i], lowercased: lowercased[i])
             }
             if inPairingWindow[i] {
-                lines[i] = apply(pairingHex, to: lines[i])
+                lines[i] = pairingHex.apply(to: lines[i], lowercased: lowercased[i])
             }
         }
         return lines.joined(separator: "\n")
     }
 
-    private static func isPairingMarker(_ line: String) -> Bool {
-        pairingMarkers.contains(where: { line.contains($0) })
-    }
-
-    private static func apply(_ rule: Rule, to text: String) -> String {
-        let range = NSRange(text.startIndex..., in: text)
-        return rule.regex.stringByReplacingMatches(in: text, range: range, withTemplate: rule.template)
+    private static func isPairingMarker(_ lowercasedLine: String) -> Bool {
+        pairingMarkers.contains(where: { lowercasedLine.contains($0) })
     }
 }

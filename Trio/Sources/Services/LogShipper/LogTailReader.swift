@@ -33,6 +33,18 @@ struct LogTailReader {
         /// Bytes before `from` were lost (missed rotation, truncated file).
         let gapBefore: Bool
         let data: Data
+
+        /// The offset to continue from when the server accepted this batch up to `accepted`
+        /// (≥ `to` means all of it). A partial accept is pulled back to the end of the last
+        /// complete line, so the next batch never starts mid-line; nil when not even one line.
+        func lineAlignedOffset(upTo accepted: Int) -> Int? {
+            if accepted >= to { return to }
+            let count = accepted - from
+            guard count > 0 else { return nil }
+            let prefix = data.prefix(count)
+            guard let newline = prefix.lastIndex(of: 0x0A) else { return nil }
+            return from + (newline - data.startIndex) + 1
+        }
     }
 
     struct Result: Equatable {

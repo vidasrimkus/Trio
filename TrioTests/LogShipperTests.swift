@@ -252,6 +252,24 @@ import Testing
         #expect(!out.contains("a1b2"))
     }
 
+    @Test("Dana keys in every DanaKit form are redacted, packets around them too") func redactDanaKeyForms() {
+        let chunk = """
+        [..] PeripheralManager.swift - peripheral(_:didUpdateValueFor:error:)#297: Receiving data: a1b2c3d4
+        [..] PeripheralManager.swift - sendV3PairingInformationEmpty()#370: Setting encryption keys. Pairing key: 0a0b0c0d0e0f, random pairing key: 1a1b1c, random sync key: 17
+        [..] PeripheralManager.swift - writeMessage(_:)#94: Sending data - Name: General_KeepConnection, OpCode: 255, Encoded data: ffee
+        [..] PeripheralManager.swift - finishV3Pairing()#425: Storing security keys: Pairing key: 0a0b0c0d0e0f, random pairing key: 1a1b1c
+        [..] PeripheralManager.swift - parseReceivedValue(_:)#650: Received message! Starting to decrypt data: 9988
+        """
+        let out = LogRedactor.redact(chunk)
+        for secret in ["0a0b0c0d0e0f", "1a1b1c", "sync key: 17", "a1b2c3d4", "ffee", "9988"] {
+            #expect(!out.contains(secret), "\(secret) leaked")
+        }
+        #expect(out.contains("Pairing key: [redacted], random pairing key: [redacted], random sync key: [redacted]"))
+        #expect(out.contains("Receiving data: [redacted:pairing]"))
+        #expect(out.contains("Encoded data: [redacted:pairing]"))
+        #expect(out.contains("decrypt data: [redacted:pairing]"))
+    }
+
     @Test("APNS device token is redacted") func redactDeviceToken() {
         let out = LogRedactor.redact("... - DEV: Device token updated: 0123abcd4567")
         #expect(out.hasSuffix("Device token updated: [redacted]"))
@@ -273,6 +291,7 @@ import Testing
         let out = LogRedactor.redact(chunk)
         #expect(out.contains("Sending pairing request. Data: [redacted]"))
         #expect(out.contains("Decoding successful! Data: [redacted:pairing]"))
+        #expect(LogRedactor.redact("Decoding successful! Data: ffee") == "Decoding successful! Data: ffee") // no marker → kept
         #expect(!out.contains("0a0b0c"))
         #expect(!out.contains("ffee"))
     }
@@ -386,6 +405,19 @@ import Testing
         #expect(LogShipperResponse.parse(status: 429, retryAfter: "120", body: Data()) == .retryLater(after: 120, message: "HTTP 429"))
         #expect(LogShipperResponse.parse(status: 503, retryAfter: "99999", body: Data()) == .retryLater(after: 3600, message: "HTTP 503"))
         #expect(LogShipperResponse.parse(status: 500, retryAfter: nil, body: Data()) == .retryLater(after: nil, message: "HTTP 500"))
+    }
+
+    @Test("A partial accept continues from the end of the last complete line") func partialAccept() {
+        // bytes: a b \n c d ė(2) \n f g \n  → 11 bytes, offsets 100…111
+        let batch = LogTailReader.Batch(fileId: "1:2", from: 100, to: 111, gapBefore: false, data: Data("ab\ncdė\nfg\n".utf8))
+        #expect(batch.lineAlignedOffset(upTo: 111) == 111)
+        #expect(batch.lineAlignedOffset(upTo: 500) == 111)
+        #expect(batch.lineAlignedOffset(upTo: 106) == 103) // inside "cdė" → back to after "ab\n"
+        #expect(batch.lineAlignedOffset(upTo: 108) == 108) // exactly after "cdė\n"
+        #expect(batch.lineAlignedOffset(upTo: 102) == nil) // not even one line
+        #expect(batch.lineAlignedOffset(upTo: 100) == nil)
+        #expect(LogShipperResponse.retryAfterInterval("nan") == nil)
+        #expect(LogShipperResponse.retryAfterInterval("inf") == nil)
     }
 
     @Test("Retry-After as seconds or HTTP date") func retryAfter() {

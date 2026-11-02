@@ -4,6 +4,13 @@ import SwiftUI
 /// Settings → Support & Community → Log Shipper. Our own screen; nothing here is localized.
 struct LogShipperConfigView: View {
     let shipper: LogShipper
+    /// Built once; a publisher made inside `body` would re-subscribe on every render.
+    private let statusPublisher: AnyPublisher<LogShipperStatus, Never>
+
+    init(shipper: LogShipper) {
+        self.shipper = shipper
+        statusPublisher = shipper.status.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
 
     @State private var url = ""
     @State private var token = ""
@@ -76,7 +83,7 @@ struct LogShipperConfigView: View {
             enabled = config.enabled
             status = shipper.status.value
         }
-        .onReceive(shipper.status.receive(on: DispatchQueue.main)) { status = $0 }
+        .onReceive(statusPublisher) { status = $0 }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
