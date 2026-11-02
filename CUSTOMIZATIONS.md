@@ -51,7 +51,7 @@ never produced there ("Path Validation Error" in every run) — left as upstream
   in its `paths-ignore`: every merge — including one that only changes this workflow — gets a full post-merge run
   that writes the cache baseline; a `workflow_dispatch` on `main` writes it too. Only runs on `main` ever save
   (`github.ref == 'refs/heads/main'`); feature branches restore through the `restore-keys` prefixes and never write
-  (one ≈ 5.4 GB baseline, 10 GB repo limit);
+  (two entries, 2.2 GB after the trim step, 10 GB repo limit);
 - a run with `only_testing` that matches no test fails ("No tests ran") instead of passing with 0 tests, and a green
   partial run is annotated PARTIAL;
 - the Xcode/Swift version (`xcodebuild -version`) is part of the DerivedData and AlgorithmPackage cache keys;
@@ -60,9 +60,23 @@ never produced there ("Path Validation Error" in every run) — left as upstream
 - input `only_testing` (ONE identifier, e.g. `TrioTests/LogShipperTests`) runs one target/suite:
   `gh workflow run unit_tests.yml -R vidasrimkus/Trio --ref <branch> -f only_testing=TrioTests/LogShipperTests`.
   The run is annotated as partial; **the full run is still required before a merge** (CLAUDE.md rule 7).
+  It reduces noise, not time: "Run tests" is mostly simulator boot and test-host install (29 tests took 295 s,
+  800 tests 275 s on warm runs).
 The baseline refreshes itself with every merge to `main` (a docs-only merge is ignored by `paths-ignore` and
 changes nothing); after an Xcode image bump the first run is cold again.
 `build_trio.yml` has no cache and is unchanged.
+
+**Measured 2026-11-02** (`Run Unit Tests` job, macos-26, Xcode 26.2):
+
+| Run | Resolve | Build for testing | Run tests | Job |
+|---|---|---|---|---|
+| Cold, before (41427506106) | 124 s | 557 s | 396 s | ≈ 20 min |
+| Cold + cache save, post-merge push (41462220641) | 175 s | 713 s | 336 s | 23 min (save 120 s) |
+| **Warm dispatch on `main` (41466038191)** | 55 s | 222 s | 275 s | **11 min** |
+| Warm, `only_testing=TrioTests/LogShipperTests` (41467957343) | 101 s | 332 s | 295 s (29 tests) | 15 min |
+
+Runner variance is large (restore 54 vs 108 s, build 222 vs 332 s between two warm runs); expect 11–15 min warm,
+20–23 min cold.
 
 ## 3. Interfaces (other systems depend on these)
 
