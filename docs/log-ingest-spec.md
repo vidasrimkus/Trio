@@ -149,7 +149,8 @@ phone restarted). Server rule:
 | `Authorization: Bearer <x>` / `Bearer <x>` (≥ 8 chars) | `Bearer [redacted]` |
 
 Around a pairing line (`Sending pairing request`, `processPairingRequest`, `Passkey`, `requesting pincode`,
-`Requested pincode`, `encryption keys`, `security keys`) — 20 lines before it and 150 lines after it — every packet
+`Requested pincode`, `security keys`; not the per-connect `Setting encryption keys` line, whose key values are redacted
+on their own) — 20 lines before it and 150 lines after it — every packet
 dump (`Data: <hex>`, `Receiving data: <hex>`, `Encoded data: <hex>`, `decrypt data: <hex>`; case-insensitive) becomes
 `…data: [redacted:pairing]`; the rest of the batch keeps its packets. Residual risk: a pairing split across two
 batches lets the second batch's first packets through; acceptable for our own server.

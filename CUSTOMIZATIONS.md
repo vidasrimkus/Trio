@@ -196,7 +196,7 @@ instead of waiting for a "Share Logs" export, and get a Nightscout Note at once 
 |---|---|
 | `LogShipper.swift` | `LogShipper` protocol, `BaseLogShipper` (scheduling, HTTP, backoff, offsets in `UserDefaults`, URL/token in Keychain), wire-format types (`LogShipmentPayload`, `LogShipmentCodec`, `LogShipperResponse`, `BackoffPolicy`). |
 | `LogTailReader.swift` | Pure: next unsent bytes of a log file; follows the daily rename by `inode:creationDate`; flags gaps (missed rotation, truncation). |
-| `LogRedactor.swift` | Pure: Dana keys in every DanaKit form (`pairingKey:`, `Pairing key:`, `random pairing key:`, `random sync key:`), passkey packets, APNS device token, query-string secrets, bearer tokens; every packet dump (`Data:`, `Receiving data:`, `Encoded data:`) within 20 lines before / 150 lines after a pairing line. |
+| `LogRedactor.swift` | Pure: Dana keys in every DanaKit form (`pairingKey:`, `Pairing key:`, `random pairing key:`, `random sync key:`), passkey packets, APNS device token, query-string secrets, bearer tokens; every packet dump (`Data:`, `Receiving data:`, `Encoded data:`) within 20 lines before / 150 lines after a pairing line (the per-connect "Setting encryption keys" line is not a pairing line). |
 | `TrioEventNotes.swift` | `TrioEvent`, the `[trio-event v1]` line format, `EventThrottle`. |
 | `TrioEventReporter.swift` | Nightscout Notes through the existing `uploadNoteTreatment`; sources `apsManager.lastError` and `BolusFailureObserver`; the same line goes into Trio's log. |
 | `LogShipperConfigView.swift` | Settings screen (URL, token, on/off, status, Send now). Not localized. |
@@ -211,9 +211,11 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 - Trigger: `apsManager.isLooping` true → false (end of every loop, success or failure) → shipment 10 s later (lets
   DanaKit's log queue flush). Fallback: `glucoseStorage.updatePublisher` after every glucose store → shipment 15 s
   later (15 s + the 15 s request fit the ~30 s of background time iOS grants); if a loop is running at that moment it steps aside and the
-  loop end ships the complete cycle, otherwise it ships (pump unreachable, no loop). At most once per minute (a request
-  that comes sooner, or while a shipment runs, is deferred, never dropped). The background task is taken before the
-  delay, only when the network is reachable; a running shipment is never cancelled. The loop never waits for it.
+  loop end ships the complete cycle, otherwise it ships (pump unreachable, no loop). At most once per minute: a request
+  that comes sooner is deferred when the wait fits in the background grant (≤ 15 s), otherwise left to the next trigger;
+  one that arrives while a shipment runs always runs right after it. The background task is taken before the delay
+  (the reachability check comes after it — `docs/log-shipper-todo.md`); a running shipment is never cancelled. The loop
+  never waits for it.
 - Both files are read from their last accepted offset (`LogTailReader`), cut at a newline, ≤ 1 MB per stream per
   shipment (a day's backlog catches up in ≈ 80 min), redacted, JSON + raw DEFLATE, `POST` with Bearer token, 15 s timeout.
 - The log files are the buffer: nothing is copied. Offline or server down → offsets stay; data survives until the

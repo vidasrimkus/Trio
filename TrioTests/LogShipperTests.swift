@@ -268,6 +268,18 @@ import Testing
         #expect(out.contains("Receiving data: [redacted:pairing]"))
         #expect(out.contains("Encoded data: [redacted:pairing]"))
         #expect(out.contains("decrypt data: [redacted:pairing]"))
+
+        // The per-connect "Setting encryption keys" line redacts its keys but opens no window:
+        // the packets around it stay (they are the diagnostics the stream exists for).
+        let connect = """
+        [..] PeripheralManager.swift - peripheral(_:didUpdateValueFor:error:)#297: Receiving data: a1b2c3d4
+        [..] PeripheralManager.swift - sendV3PairingInformationEmpty()#370: Setting encryption keys. Pairing key: 0a0b0c0d0e0f, random pairing key: 1a1b1c, random sync key: 17
+        [..] PeripheralManager.swift - parseReceivedValue(_:)#658: Decoding successful! Data: ffee
+        """
+        let kept = LogRedactor.redact(connect)
+        #expect(kept.contains("Pairing key: [redacted], random pairing key: [redacted], random sync key: [redacted]"))
+        #expect(kept.contains("Receiving data: a1b2c3d4"))
+        #expect(kept.contains("Decoding successful! Data: ffee"))
     }
 
     @Test("APNS device token is redacted") func redactDeviceToken() {

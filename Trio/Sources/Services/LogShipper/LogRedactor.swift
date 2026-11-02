@@ -50,7 +50,9 @@ enum LogRedactor {
         "passkey",
         "requesting pincode",
         "requested pincode",
-        "encryption keys",
+        // Not "encryption keys": DanaKit logs "Setting encryption keys. Pairing key: …" on every
+        // RSv3 connect (~500/day); the keys on that line are redacted by valueRules and the
+        // packets after it are encrypted with them, so a window there would only blank diagnostics.
         "security keys"
     ]
 
