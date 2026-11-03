@@ -97,6 +97,17 @@ private final class MockCenter: PreBolusNotificationCenter {
         #expect(center.removed.count == 2)
     }
 
+    @Test("Cancelling a later correction keeps the meal timer") func cancelCorrectionKeepsTimer() async throws {
+        let center = MockCenter()
+        let notifier = PreBolusNotifier(center: center)
+        _ = notifier.arm(plan: wait(15), now: now)
+        _ = notifier.arm(plan: .hidden, now: now) // correction enacted
+        notifier.cancelCallback(true, "Bolus cancelled successfully.")
+        try await settle()
+        #expect(notifier.deadline == now.addingTimeInterval(900))
+        #expect(center.removed.count == 1)
+    }
+
     @Test("A newer wait replaces the previous timer; the old bolus failing late does not remove it") func replaces() async throws {
         let center = MockCenter()
         let notifier = PreBolusNotifier(center: center)

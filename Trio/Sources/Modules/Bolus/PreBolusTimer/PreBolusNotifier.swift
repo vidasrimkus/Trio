@@ -24,6 +24,9 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
 
     @ObservationIgnored private let center: PreBolusNotificationCenter
     @ObservationIgnored private var armID = UUID()
+    /// The arm of the bolus enacted last; nil when that bolus had no wait (a correction). A Cancel only
+    /// removes the timer when it cancels the bolus that armed it.
+    @ObservationIgnored private var runningArmID: UUID?
 
     init(center: PreBolusNotificationCenter) {
         self.center = center
@@ -37,11 +40,15 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
     }
 
     @MainActor func arm(plan: PreBolusPlan, now: Date = Date()) -> ((Bool, String) -> Void)? {
-        guard case let .wait(minutes, until) = plan, minutes > 0 else { return nil }
+        guard case let .wait(minutes, until) = plan, minutes > 0 else {
+            runningArmID = nil // a bolus without a wait is running now; a Cancel of it keeps the timer
+            return nil
+        }
         disarm() // a newer wait replaces the previous one
 
         let id = UUID()
         armID = id
+        runningArmID = id
         deadline = until
 
         let content = UNMutableNotificationContent()
@@ -61,11 +68,17 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
         }
     }
 
-    /// For `apsManager.cancelBolus(_:)` at the Cancel buttons: a successful cancel removes the timer.
+    /// For `apsManager.cancelBolus(_:)` at the Cancel buttons: a successful cancel of the bolus that armed the
+    /// timer removes it; cancelling a later correction keeps the meal reminder.
     var cancelCallback: (Bool, String) -> Void {
         { [weak self] success, _ in
             guard success else { return }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.disarm() } }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, let running = self.runningArmID else { return }
+                    self.disarm(ifArmed: running)
+                }
+            }
         }
     }
 

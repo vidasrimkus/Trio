@@ -10,5 +10,8 @@
 - A pump error with uncertain delivery (e.g. Omnipod) goes through `callback(false)` and removes the reminder
   although insulin may have been delivered; "Bolus failed — check pump history" is shown by APSManager.
   Decide with Vidas whether failures should keep the reminder. Reason: spec says remove on failure.
+- A bolus cancelled outside Trio's two Cancel buttons (pump manager UI, the pump's own button) leaves the timer
+  armed: the reminder comes on time with less insulin given. Reason: the safer direction (high, not hypo); the
+  progress-based detection that caught it was removed because it also fired after full delivery.
 - Placement of the Home countdown (bottom of the 44 pt meal-panel slot, caption2) is unverified without a
   simulator — check on the TestFlight build. Reason: visual only.
