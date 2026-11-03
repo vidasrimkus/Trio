@@ -17,6 +17,8 @@ struct PreBolusArmedTimer: Codable, Equatable {
     /// When "Enact bolus" was tapped.
     let bolusAt: Date
     let plannedMinutes: Int
+    /// The food type picked for that bolus.
+    let mealType: PreBolusMealType
 }
 
 /// The armed pre-bolus timer: one pending local notification ("Laikas valgyti") and `deadline`, which the
@@ -35,6 +37,20 @@ struct PreBolusArmedTimer: Codable, Equatable {
 
     /// End of the armed wait; nil when nothing is armed.
     private(set) var deadline: Date?
+
+    /// The food type picked on the bolus screen (segments under the timer row). Back to "Įprastas" once a bolus is
+    /// armed with it, or `mealTypeMemory` after it was picked.
+    private var pickedMealType: (type: PreBolusMealType, at: Date)?
+
+    func mealType(now: Date = Date()) -> PreBolusMealType {
+        guard let picked = pickedMealType, now.timeIntervalSince(picked.at) < PreBolusConstants.mealTypeMemory
+        else { return .normal }
+        return picked.type
+    }
+
+    func pickMealType(_ type: PreBolusMealType, now: Date = Date()) {
+        pickedMealType = (type, now)
+    }
 
     /// Set by `BaseTrioEventReporter` when it starts; nil in tests unless a mock is set.
     @ObservationIgnored weak var reporter: TrioEventReporter?
@@ -78,8 +94,14 @@ struct PreBolusArmedTimer: Codable, Equatable {
         lastError: AnyPublisher<Error?, Never>,
         now: Date = Date()
     ) -> ((Bool, String) -> Void)? {
-        let plan = PreBolusPlanner.plan(carbs: carbs, readings: PreBolusReading.from(Array(glucose.prefix(12))), now: now)
-        return arm(plan: plan, lastError: lastError, now: now)
+        let type = mealType(now: now)
+        let plan = PreBolusPlanner.plan(
+            carbs: carbs,
+            readings: PreBolusReading.from(Array(glucose.prefix(12))),
+            now: now,
+            mealType: type
+        )
+        return arm(plan: plan, mealType: type, lastError: lastError, now: now)
     }
 
     /// `lastError`: `apsManager.lastError`. Its pump-error path sends `APSError.pumpError` right before
@@ -87,9 +109,11 @@ struct PreBolusArmedTimer: Codable, Equatable {
     /// `invalidPumpState` or nothing (no bolus was sent).
     @MainActor func arm(
         plan: PreBolusPlan,
+        mealType: PreBolusMealType = .normal,
         lastError: AnyPublisher<Error?, Never> = Empty().eraseToAnyPublisher(),
         now: Date = Date()
     ) -> ((Bool, String) -> Void)? {
+        if carbsPlan(plan) { pickedMealType = nil } // the pick belonged to this meal bolus
         guard case let .wait(minutes, until) = plan, minutes > 0 else {
             runningArmID = nil // a bolus without a wait is running now; a Cancel of it keeps the timer
             return nil
@@ -106,7 +130,7 @@ struct PreBolusArmedTimer: Codable, Equatable {
         let id = UUID()
         armID = id
         runningArmID = id
-        store(PreBolusArmedTimer(deadline: until, bolusAt: now, plannedMinutes: minutes))
+        store(PreBolusArmedTimer(deadline: until, bolusAt: now, plannedMinutes: minutes, mealType: mealType))
 
         let content = UNMutableNotificationContent()
         content.title = PreBolusConstants.notificationTitle
@@ -201,7 +225,13 @@ struct PreBolusArmedTimer: Codable, Equatable {
             bolusAt: timer.bolusAt,
             plannedMin: timer.plannedMinutes,
             actualMin: actual,
-            via: via
+            via: via,
+            mealType: timer.mealType.rawValue
         ))
+    }
+
+    /// A plan made for entered carbs (anything but "no carbs").
+    private func carbsPlan(_ plan: PreBolusPlan) -> Bool {
+        plan != .hidden
     }
 }

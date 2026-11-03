@@ -1,7 +1,8 @@
 # Pre-bolus timer — open items (not blocking the build)
 
 - The row plans at its once-a-minute tick, `arm` plans again after Face ID; a CGM reading arriving in between can
-  make the scheduled wait differ from the one shown (e.g. 10 vs 15 min). The Home countdown shows the real one.
+  make the scheduled wait differ from the one shown (e.g. 7 vs 22 min when the trend flips). The Home countdown
+  shows the real one.
   Reason: rare, never longer than the cap, the countdown is authoritative.
 - `apsManager.enactBolus` returns without calling the callback when the amount is ≤ 0 (Max Bolus 0): the timer
   stays armed with no bolus. Reason: needs Max Bolus = 0; `addPumpInsulin` already guards amount > 0.
@@ -24,6 +25,10 @@
   exact). With the loop stuck (as on 2026-11-03 13:05) it waits until the app is opened. Reason: no extra
   background work for a Note.
 - The silent setting applies from the next timer; a timer already armed keeps its sound. Reason: rare, harmless.
+- Food-type pick: kept 30 min if no meal bolus uses it (closing the bolus screen does not reset it — the segment
+  shows it when the screen opens again). Reason: no upstream hook needed for "screen closed".
+- User's system, interpretation to confirm: rising for Įprastas/Lėtas is "at least 22 / 17" (never shortens a
+  longer BG-based wait); unknown 15-min trend = falling, as in v1.
 - The `meal_started` Nightscout Note is fire-and-forget (`uploadNoteTreatment`, no retry), like the other trio
   events: offline at that moment → only the `DEV:` log line reaches t1d-monitor (via Log Shipper, `log_events`
   kind `trio_event`). Reason: informational event; the log line is the backup.

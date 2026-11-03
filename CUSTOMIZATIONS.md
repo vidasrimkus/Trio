@@ -322,16 +322,29 @@ On the bolus screen, under "Recommendation", when carbs > 0: how long to wait be
 ("🍽️ Valgyk po 15 min (18:52)"). On "Enact bolus" one local notification "Laikas valgyti" is scheduled for that
 time, and Home shows a countdown "🍽️ 12:40" (mm:ss) under the IOB/COB row until then.
 
-| BG (mmol/L, as shown) | Trend = Δ last 15 min | Wait |
-|---|---|---|
-| < 5.0 | — | "Valgyk iškart", no timer |
-| 5.0 – < 6.5 | falling (≤ −0.3) / otherwise | 5 / 10 min |
-| 6.5 – 9.0 | falling / otherwise | 10 / 15 min |
-| > 9.0 | — | 20 min |
+The wait follows **the user's own pre-bolus system** (given 2026-11-03; it replaced the first BG-band table).
+The bolus row has a food-type picker — 4 segments **Greitas / Įprastas / Lėtas / Riebus**, "Įprastas" by default
+(a pick holds 30 min or until a meal bolus uses it).
 
-Rise > 0.5 in the last 10 min → "Atrodo, jau valgai – kitą kartą bolusas anksčiau", no timer (checked after
-the < 5.0 rule). Newest CGM older than 10 min → "Nėra šviežių CGM duomenų", no timer. No reading ~15 min back
-(± 3 min) → treated as falling (shorter wait). Max 20 min. All numbers and texts: `PreBolusConstants.swift`.
+1. **Safety first** (no timer): BG < 5.0, or a drop of ≥ 1.0 over the last 15 min → "🍽️ Valgyk iškart".
+   Rise > 1.0 over the last 10 min → "Atrodo, jau valgai – kitą kartą bolusas anksčiau".
+2. **Wait = max(minutes_bg, base)**, minutes_bg = round(BG mmol/L × 1.8) (the first two digits of mg/dL; halves
+   up), base: Greitas 30 / Įprastas 15 / Lėtas 10 / Riebus 30 min.
+3. **Trend** = Δ over the last 15 min:
+
+| Food type | falling (≤ −0.3) | flat | rising (≥ +0.3) |
+|---|---|---|---|
+| Greitas, Riebus | 12 min | unchanged | +5 |
+| Įprastas | 7 min | unchanged | 22 min (at least) |
+| Lėtas | 0 → "🍽️ Bolusas valgant – valgyk iškart", no timer | unchanged | 17 min (at least) |
+
+4. **Cap 35 min.**
+
+Interpretation choices (the system did not say): rising for Įprastas/Lėtas never shortens the wait — "→ 22 / 17"
+is applied as "at least 22 / 17" (BG ≥ 12.5 already gives more); falling sets the value (always shorter). No
+reading ~15 min back (± 3 min) → treated as falling (the shorter wait), as in v1; the ≥ 1.0 drop rule then cannot
+fire. Newest CGM older than 10 min → "Nėra šviežių CGM duomenų", no timer. All numbers and texts:
+`PreBolusConstants.swift`. The chosen food type is stored with the armed timer and sent as `meal_type=`.
 
 - Code: `Trio/Sources/Modules/Bolus/PreBolusTimer/` — `PreBolusPlanner` (pure), `PreBolusNotifier` (one
   `UNUserNotificationCenter` request `Trio.preBolusTimer`, `deadline` = the one source of truth for the Home
@@ -364,7 +377,8 @@ v2 (branch `feature/prebolus-timer-v2`) — the meal start:
   noticed within one loop cycle, with the exact deadline as `at`. A "Valgau" tapped after the deadline counts as
   the timer's end. A bolus failure, a bolus Cancel, or a newer wait (before the old one ran out) record nothing;
   a newer wait after an old one ran out first reports the old one.
-- Event: `[trio-event v1] meal_started at=<ISO> bolus_at=<ISO> planned_min=<n> actual_min=<n> via=button|timer`
+- Event: `[trio-event v1] meal_started at=<ISO> bolus_at=<ISO> planned_min=<n> actual_min=<n> via=button|timer
+  meal_type=fast|normal|slow|fatty`
   (`TrioEvent.mealStarted`, `TrioEventNote.format`), sent through `TrioEventReporter.report` like the other
   events: Nightscout Note + `DEV:` log line (`docs/log-ingest-spec.md` §6.1). `bolus_at` = the "Enact bolus" tap.
 - The armed timer (`deadline`, `bolusAt`, `plannedMinutes`) is kept in UserDefaults `PreBolusTimer.armed`: a
@@ -385,8 +399,7 @@ v2 (branch `feature/prebolus-timer-v2`) — the meal start:
 - Rejected: moving the carb entry's time to the meal start — see `docs/prebolus-timer-todo.md`.
 
 Stage 2 (not built):
-- Food type from the carb entry's note field: `PreBolusPlanner.foodAdjustmentMinutes(note:)` (returns 0), the
-  20-min cap still applies after it.
+- ~~Food type from the carb entry's note field~~ — done differently: the food-type picker on the bolus row.
 - Live Activity countdown: needs a field in the shared `ContentState` (`LiveActivityAttributes.swift` and
   `LiveActitiyAttributes.swift`), `LiveActivityManager` to push it, and `LiveActivity/Views/LiveActivityView.swift`
   (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity

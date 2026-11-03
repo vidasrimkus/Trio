@@ -390,14 +390,17 @@ import Testing
     @Test("meal_started (pre-bolus timer v2)") func noteMealStarted() {
         let bolusAt = Date(timeIntervalSince1970: 1_793_607_153)
         let event = TrioEvent.mealStarted(
-            at: bolusAt.addingTimeInterval(660), bolusAt: bolusAt, plannedMin: 15, actualMin: 11, via: .button
+            at: bolusAt.addingTimeInterval(660), bolusAt: bolusAt, plannedMin: 15, actualMin: 11, via: .button,
+            mealType: "fast"
         )
         #expect(
             TrioEventNote.format(event) ==
-                "[trio-event v1] meal_started at=2026-11-02T08:23:33Z bolus_at=2026-11-02T08:12:33Z planned_min=15 actual_min=11 via=button"
+                "[trio-event v1] meal_started at=2026-11-02T08:23:33Z bolus_at=2026-11-02T08:12:33Z planned_min=15 actual_min=11 via=button meal_type=fast"
         )
-        let timer = TrioEvent.mealStarted(at: bolusAt, bolusAt: bolusAt, plannedMin: 5, actualMin: 5, via: .timer)
-        #expect(TrioEventNote.format(timer).hasSuffix(" planned_min=5 actual_min=5 via=timer"))
+        let timer = TrioEvent.mealStarted(
+            at: bolusAt, bolusAt: bolusAt, plannedMin: 5, actualMin: 5, via: .timer, mealType: "normal"
+        )
+        #expect(TrioEventNote.format(timer).hasSuffix(" planned_min=5 actual_min=5 via=timer meal_type=normal"))
     }
 
     @Test("Throttle: one per key per window") func throttle() {

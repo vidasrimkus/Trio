@@ -184,7 +184,7 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.notifier.deadline == nil)
         #expect(f.center.removed.count == 2)
         #expect(f.reporter.events == [
-            .mealStarted(at: minutes(10.6), bolusAt: now, plannedMin: 15, actualMin: 11, via: .button)
+            .mealStarted(at: minutes(10.6), bolusAt: now, plannedMin: 15, actualMin: 11, via: .button, mealType: "normal")
         ])
         f.notifier.markEating(now: minutes(11))
         f.notifier.finalizeIfExpired(now: minutes(30))
@@ -199,7 +199,7 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.notifier.deadline != nil)
         f.notifier.finalizeIfExpired(now: minutes(19))
         #expect(f.reporter.events == [
-            .mealStarted(at: minutes(15), bolusAt: now, plannedMin: 15, actualMin: 15, via: .timer)
+            .mealStarted(at: minutes(15), bolusAt: now, plannedMin: 15, actualMin: 15, via: .timer, mealType: "normal")
         ])
         #expect(f.notifier.deadline == nil)
         f.notifier.finalizeIfExpired(now: minutes(25))
@@ -211,7 +211,7 @@ private final class MockReporter: TrioEventReporter {
         _ = f.notifier.arm(plan: wait(10), now: now)
         f.notifier.markEating(now: minutes(12))
         #expect(f.reporter.events == [
-            .mealStarted(at: minutes(10), bolusAt: now, plannedMin: 10, actualMin: 10, via: .timer)
+            .mealStarted(at: minutes(10), bolusAt: now, plannedMin: 10, actualMin: 10, via: .timer, mealType: "normal")
         ])
     }
 
@@ -233,7 +233,7 @@ private final class MockReporter: TrioEventReporter {
         let later = minutes(120)
         _ = f.notifier.arm(plan: .wait(minutes: 5, until: later.addingTimeInterval(300)), now: later)
         #expect(f.reporter.events == [
-            .mealStarted(at: minutes(10), bolusAt: now, plannedMin: 10, actualMin: 10, via: .timer)
+            .mealStarted(at: minutes(10), bolusAt: now, plannedMin: 10, actualMin: 10, via: .timer, mealType: "normal")
         ])
         #expect(f.notifier.deadline == later.addingTimeInterval(300))
     }
@@ -245,7 +245,7 @@ private final class MockReporter: TrioEventReporter {
         #expect(relaunched.deadline == now.addingTimeInterval(900))
         relaunched.finalizeIfExpired(now: minutes(40))
         #expect(f.reporter.events == [
-            .mealStarted(at: minutes(15), bolusAt: now, plannedMin: 15, actualMin: 15, via: .timer)
+            .mealStarted(at: minutes(15), bolusAt: now, plannedMin: 15, actualMin: 15, via: .timer, mealType: "normal")
         ])
         #expect(f.makeNotifier().deadline == nil)
     }
@@ -268,6 +268,34 @@ private final class MockReporter: TrioEventReporter {
         f.notifier.finalizeIfExpired(now: minutes(15 + 6 * 60 + 1))
         #expect(f.reporter.events.isEmpty)
         #expect(f.notifier.deadline == nil)
+    }
+
+    // MARK: - Food type
+
+    @Test("Food type: „Įprastas“ by default, a pick holds 30 min") func mealTypePick() {
+        let f = Fixture()
+        #expect(f.notifier.mealType(now: now) == .normal)
+        f.notifier.pickMealType(.slow, now: now)
+        #expect(f.notifier.mealType(now: minutes(29)) == .slow)
+        #expect(f.notifier.mealType(now: minutes(31)) == .normal)
+    }
+
+    @Test("Food type: a meal bolus uses the pick up (any plan for carbs); a no-carbs bolus keeps it") func mealTypeReset() {
+        let f = Fixture()
+        f.notifier.pickMealType(.fast, now: now)
+        _ = f.notifier.arm(plan: .hidden, now: now) // correction without carbs
+        #expect(f.notifier.mealType(now: now) == .fast)
+        _ = f.notifier.arm(plan: .eatNow, mealType: .fast, now: now)
+        #expect(f.notifier.mealType(now: now) == .normal)
+    }
+
+    @Test("Food type goes into meal_started and survives a relaunch") func mealTypeInEvent() {
+        let f = Fixture()
+        _ = f.notifier.arm(plan: wait(20), mealType: .fatty, now: now)
+        f.makeNotifier().finalizeIfExpired(now: minutes(21))
+        #expect(f.reporter.events == [
+            .mealStarted(at: minutes(20), bolusAt: now, plannedMin: 20, actualMin: 20, via: .timer, mealType: "fatty")
+        ])
     }
 
     // MARK: - v2: silent reminder

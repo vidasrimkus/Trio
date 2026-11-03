@@ -15,8 +15,9 @@ enum TrioEvent: Equatable {
     case bolusFailed(error: String?)
     case pumpError(error: String)
     /// The meal began after a pre-bolus wait (CUSTOMIZATIONS §10): "Valgau" tapped (`button`, `at` = the tap) or the
-    /// timer ran out (`timer`, `at` = its deadline). `bolusAt` = when the bolus was enacted.
-    case mealStarted(at: Date, bolusAt: Date, plannedMin: Int, actualMin: Int, via: MealStartVia)
+    /// timer ran out (`timer`, `at` = its deadline). `bolusAt` = when the bolus was enacted. `mealType` = the food
+    /// type picked on the bolus screen (fast|normal|slow|fatty).
+    case mealStarted(at: Date, bolusAt: Date, plannedMin: Int, actualMin: Int, via: MealStartVia, mealType: String)
 
     enum MealStartVia: String {
         case button
@@ -47,9 +48,9 @@ enum TrioEventNote {
             return "\(prefix) " + fields.joined(separator: " ")
         case let .pumpError(error):
             return "\(prefix) pump_error err=\"\(sanitize(error))\""
-        case let .mealStarted(at, bolusAt, plannedMin, actualMin, via):
+        case let .mealStarted(at, bolusAt, plannedMin, actualMin, via, mealType):
             return "\(prefix) meal_started at=\(iso(at)) bolus_at=\(iso(bolusAt)) planned_min=\(plannedMin) " +
-                "actual_min=\(actualMin) via=\(via.rawValue)"
+                "actual_min=\(actualMin) via=\(via.rawValue) meal_type=\(mealType)"
         }
     }
 
