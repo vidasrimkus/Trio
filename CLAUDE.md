@@ -42,7 +42,7 @@ Rule for this list: every CI failure whose cause would repeat gets a line here, 
   crash, not a log line — use `warning(...)` / `debug(...)`.
 - `TrioSettings` has a hand-written `init(from:)` (`Trio/Sources/Models/TrioSettings.swift:129`, one `try?` per key);
   do not add our settings there — Keychain / `UserDefaults` in our own module (see `BaseLogShipper.Config`).
-- `.gitmodules` points LibreCRKit, DanaKit, OmnipodKit, LoopKit, LoopAlgorithm at `vidasrimkus/*` forks with the
+- `.gitmodules` points DanaKit, OmnipodKit, LoopKit, LoopAlgorithm, RoundWhiteDiscKit, LibreLoop at `vidasrimkus/*` forks with the
   upstream pins (`CUSTOMIZATIONS.md` §9); after pulling that change run `git submodule sync --recursive`; the full
   dependency list is `docs/dependencies.md`.
 - Tests and builds run only on GitHub (no Swift toolchain on the Windows machine); `unit_tests.yml` has
