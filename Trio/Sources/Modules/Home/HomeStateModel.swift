@@ -828,7 +828,7 @@ extension Home {
 
         func cancelBolus() {
             Task {
-                await apsManager.cancelBolus(nil)
+                await apsManager.cancelBolus(PreBolusNotifier.shared.cancelCallback) // [vidas] §10
 
                 // perform determine basal sync, otherwise you have could end up with too much iob when opening the calculator again
                 try await apsManager.determineBasalSync()

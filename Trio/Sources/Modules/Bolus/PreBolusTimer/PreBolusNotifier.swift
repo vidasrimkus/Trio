@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import Observation
 import UserNotifications
@@ -12,9 +11,11 @@ protocol PreBolusNotificationCenter: AnyObject {
 extension UNUserNotificationCenter: PreBolusNotificationCenter {}
 
 /// The armed pre-bolus timer: one pending local notification ("Laikas valgyti") and `deadline`, which the
-/// Home countdown reads — one source of truth. Armed at "Enact bolus"; disarmed when the bolus fails
-/// (enactBolus callback false), is cancelled (`bolusProgress` ends below 100 %) or a new bolus is armed.
-/// Uses the notification permission Trio already holds; no AlertManager history, so nothing replays.
+/// Home countdown reads — one source of truth. Armed at "Enact bolus" when the plan is a wait; removed when
+/// that bolus fails (enactBolus callback false), when the user cancels a bolus (Cancel buttons pass
+/// `cancelCallback`), or when a newer wait replaces it. A bolus without a wait (correction, eat now…) leaves a
+/// running timer alone. Uses the notification permission Trio already holds; no AlertManager history, so
+/// nothing replays after a restart.
 @Observable final class PreBolusNotifier {
     static let shared = PreBolusNotifier(center: UNUserNotificationCenter.current())
 
@@ -22,7 +23,6 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
     private(set) var deadline: Date?
 
     @ObservationIgnored private let center: PreBolusNotificationCenter
-    @ObservationIgnored private var progressSubscription: AnyCancellable?
     @ObservationIgnored private var armID = UUID()
 
     init(center: PreBolusNotificationCenter) {
@@ -30,24 +30,15 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
     }
 
     /// The hook in `Treatments.StateModel.addPumpInsulin`: plans from the bolus screen's data and returns the
-    /// callback to pass to `apsManager.enactBolus`.
-    @MainActor func arm(
-        carbs: Decimal,
-        glucose: [GlucoseStored],
-        apsManager: APSManager,
-        now: Date = Date()
-    ) -> ((Bool, String) -> Void)? {
-        let plan = PreBolusPlanner.plan(carbs: carbs, readings: PreBolusReading.from(glucose), now: now)
-        return arm(plan: plan, bolusProgress: apsManager.bolusProgress.eraseToAnyPublisher(), now: now)
+    /// callback to pass to `apsManager.enactBolus`. `glucose` is newest first; only the last hour is read.
+    @MainActor func arm(carbs: Decimal, glucose: [GlucoseStored], now: Date = Date()) -> ((Bool, String) -> Void)? {
+        let plan = PreBolusPlanner.plan(carbs: carbs, readings: PreBolusReading.from(Array(glucose.prefix(12))), now: now)
+        return arm(plan: plan, now: now)
     }
 
-    @MainActor func arm(
-        plan: PreBolusPlan,
-        bolusProgress: AnyPublisher<Decimal?, Never>,
-        now: Date = Date()
-    ) -> ((Bool, String) -> Void)? {
-        disarm()
+    @MainActor func arm(plan: PreBolusPlan, now: Date = Date()) -> ((Bool, String) -> Void)? {
         guard case let .wait(minutes, until) = plan, minutes > 0 else { return nil }
+        disarm() // a newer wait replaces the previous one
 
         let id = UUID()
         armID = id
@@ -64,32 +55,23 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
             withCompletionHandler: nil
         )
 
-        // A cancelled bolus ends with progress < 1 followed by nil; a finished one reports 1 first.
-        var last: Decimal?
-        progressSubscription = bolusProgress
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] progress in
-                if let progress {
-                    last = progress
-                } else if let finalProgress = last {
-                    // delivered on the main queue (receive(on:) above)
-                    MainActor.assumeIsolated {
-                        if finalProgress < 1 { self?.disarm(ifArmed: id) }
-                        self?.progressSubscription = nil
-                    }
-                }
-            }
-
         return { [weak self] success, _ in
             guard !success else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.disarm(ifArmed: id) } }
         }
     }
 
+    /// For `apsManager.cancelBolus(_:)` at the Cancel buttons: a successful cancel removes the timer.
+    var cancelCallback: (Bool, String) -> Void {
+        { [weak self] success, _ in
+            guard success else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.disarm() } }
+        }
+    }
+
     @MainActor func disarm() {
         center.removePendingNotificationRequests(withIdentifiers: [PreBolusConstants.notificationIdentifier])
         deadline = nil
-        progressSubscription = nil
     }
 
     @MainActor private func disarm(ifArmed id: UUID) {

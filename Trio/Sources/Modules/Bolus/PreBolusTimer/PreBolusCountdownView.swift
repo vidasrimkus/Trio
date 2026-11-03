@@ -12,12 +12,15 @@ struct PreBolusCountdownView: View {
             TimelineView(.explicit([deadline])) { context in
                 let now = max(context.date, Date())
                 if now < deadline {
-                    (Text("🍽️ ") + Text(timerInterval: now ... deadline, countsDown: true))
-                        .font(.caption2)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .offset(y: 6)
-                        .accessibilityLabel(Text("Laikas iki valgio"))
+                    HStack(spacing: 0) {
+                        Text(verbatim: "🍽️ ")
+                        Text(timerInterval: now ... deadline, countsDown: true)
+                    }
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(Text(verbatim: "Laikas iki valgio"))
                 }
             }
         }

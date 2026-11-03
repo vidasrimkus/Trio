@@ -302,7 +302,7 @@ extension Treatments {
 
         func cancelBolus() {
             Task {
-                await apsManager.cancelBolus(nil)
+                await apsManager.cancelBolus(PreBolusNotifier.shared.cancelCallback) // [vidas] §10
                 try? await apsManager.determineBasalSync()
             }
         }
@@ -644,7 +644,7 @@ extension Treatments {
                     await MainActor.run {
                         self.isAwaitingDeterminationResult = true
                     }
-                    await apsManager.enactBolus(amount: maxAmount, isSMB: false, callback: PreBolusNotifier.shared.arm(carbs: carbs, glucose: glucoseFromPersistence, apsManager: apsManager)) // [vidas] §10
+                    await apsManager.enactBolus(amount: maxAmount, isSMB: false, callback: PreBolusNotifier.shared.arm(carbs: carbs, glucose: glucoseFromPersistence)) // [vidas] §10
                 }
             } catch {
                 debug(.bolusState, "Authentication error for pump bolus: \(error)")

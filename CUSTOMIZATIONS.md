@@ -338,9 +338,13 @@ the < 5.0 rule). Newest CGM older than 10 min → "Nėra šviežių CGM duomenų
   countdown), `PreBolusTimerRow`, `PreBolusCountdownView`, `PreBolusConstants`.
 - Existing files, one line each: `TreatmentsRootView.swift` (row after "Recommendation"),
   `TreatmentsStateModel.addPumpInsulin` (`enactBolus` callback `nil` → `PreBolusNotifier.shared.arm(…)`),
-  `HomeRootView.swift` (`.overlay(alignment: .bottom)` on the meal-panel slot). Plus `project.pbxproj`.
-- Disarmed when the bolus fails (enactBolus callback `false` — covers verifyStatus, no pump, pump error), is
-  cancelled (`apsManager.bolusProgress` ends below 100 % → nil), or a new bolus is armed. `APSManager` unchanged.
+  `HomeRootView.swift` (`.overlay(alignment: .bottom)` on the meal-panel slot), and the two Cancel buttons
+  (`HomeStateModel.cancelBolus`, `TreatmentsStateModel.cancelBolus`: `cancelBolus(nil)` →
+  `cancelBolus(PreBolusNotifier.shared.cancelCallback)`). Plus `project.pbxproj`.
+- Disarmed when the bolus fails (enactBolus callback `false` — covers verifyStatus, no pump, pump error), when a
+  Cancel button cancels successfully, or when a newer wait replaces it. A later bolus without a wait (a
+  correction, carbs 0, eat now…) leaves a running timer alone. Cancellation is not inferred from
+  `bolusProgress` (a finished bolus can end below 100 % — rejected in review). `APSManager` unchanged.
 - Notification: Trio's existing permission and `willPresent` delegate; deliberately not `TrioAlertManager`
   (its alert history would replay an unacknowledged "Laikas valgyti" after an app restart). Only with a pump
   bolus — not with External Insulin or carbs alone.
