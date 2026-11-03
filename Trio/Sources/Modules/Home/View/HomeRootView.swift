@@ -248,6 +248,7 @@ extension Home {
 
                 mealPanel()
                     .frame(height: HomeLayout.mealSlotHeight)
+                    .overlay(alignment: .bottom) { PreBolusCountdownView() } // [vidas] CUSTOMIZATIONS §10
                     // Fades the readout in and out. Keyed on visibility, not on the date: a
                     // scrub step leaves the flag alone, so only the swap animates and the
                     // values inside keep updating unanimated.

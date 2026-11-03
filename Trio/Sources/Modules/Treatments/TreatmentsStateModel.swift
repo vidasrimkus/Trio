@@ -644,7 +644,7 @@ extension Treatments {
                     await MainActor.run {
                         self.isAwaitingDeterminationResult = true
                     }
-                    await apsManager.enactBolus(amount: maxAmount, isSMB: false, callback: nil)
+                    await apsManager.enactBolus(amount: maxAmount, isSMB: false, callback: PreBolusNotifier.shared.arm(carbs: carbs, glucose: glucoseFromPersistence, apsManager: apsManager)) // [vidas] §10
                 }
             } catch {
                 debug(.bolusState, "Authentication error for pump bolus: \(error)")

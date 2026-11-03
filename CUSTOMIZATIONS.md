@@ -315,3 +315,44 @@ list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor check
 
 Existing clones keep the old URLs in `.git/config` until `git submodule sync --recursive` is run once after
 pulling a `.gitmodules` change (CI and the browser build clone fresh, so they are unaffected).
+
+## 10. Pre-bolus timer (branch `feature/prebolus-timer`)
+
+On the bolus screen, under "Recommendation", when carbs > 0: how long to wait between the bolus and the meal
+("🍽️ Valgyk po 15 min (18:52)"). On "Enact bolus" one local notification "Laikas valgyti" is scheduled for that
+time, and Home shows a countdown "🍽️ 12:40" (mm:ss) under the IOB/COB row until then.
+
+| BG (mmol/L, as shown) | Trend = Δ last 15 min | Wait |
+|---|---|---|
+| < 5.0 | — | "Valgyk iškart", no timer |
+| 5.0 – < 6.5 | falling (≤ −0.3) / otherwise | 5 / 10 min |
+| 6.5 – 9.0 | falling / otherwise | 10 / 15 min |
+| > 9.0 | — | 20 min |
+
+Rise > 0.5 in the last 10 min → "Atrodo, jau valgai – kitą kartą bolusas anksčiau", no timer (checked after
+the < 5.0 rule). Newest CGM older than 10 min → "Nėra šviežių CGM duomenų", no timer. No reading ~15 min back
+(± 3 min) → treated as falling (shorter wait). Max 20 min. All numbers and texts: `PreBolusConstants.swift`.
+
+- Code: `Trio/Sources/Modules/Bolus/PreBolusTimer/` — `PreBolusPlanner` (pure), `PreBolusNotifier` (one
+  `UNUserNotificationCenter` request `Trio.preBolusTimer`, `deadline` = the one source of truth for the Home
+  countdown), `PreBolusTimerRow`, `PreBolusCountdownView`, `PreBolusConstants`.
+- Existing files, one line each: `TreatmentsRootView.swift` (row after "Recommendation"),
+  `TreatmentsStateModel.addPumpInsulin` (`enactBolus` callback `nil` → `PreBolusNotifier.shared.arm(…)`),
+  `HomeRootView.swift` (`.overlay(alignment: .bottom)` on the meal-panel slot). Plus `project.pbxproj`.
+- Disarmed when the bolus fails (enactBolus callback `false` — covers verifyStatus, no pump, pump error), is
+  cancelled (`apsManager.bolusProgress` ends below 100 % → nil), or a new bolus is armed. `APSManager` unchanged.
+- Notification: Trio's existing permission and `willPresent` delegate; deliberately not `TrioAlertManager`
+  (its alert history would replay an unacknowledged "Laikas valgyti" after an app restart). Only with a pump
+  bolus — not with External Insulin or carbs alone.
+- Battery: the countdown seconds are drawn by the system (`Text(timerInterval:)`), the app runs no timer; one
+  `TimelineView` wake-up at the deadline removes it, and only while Home is visible. The bolus-screen row
+  re-evaluates once a minute while it is on screen.
+- Tests: `TrioTests/PreBolusPlannerTests.swift`, `TrioTests/PreBolusNotifierTests.swift`.
+
+Stage 2 (not built):
+- Food type from the carb entry's note field: `PreBolusPlanner.foodAdjustmentMinutes(note:)` (returns 0), the
+  20-min cap still applies after it.
+- Live Activity countdown: needs a field in the shared `ContentState` (`LiveActivityAttributes.swift` and
+  `LiveActitiyAttributes.swift`), `LiveActivityManager` to push it, and `LiveActivity/Views/LiveActivityView.swift`
+  (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity
+  (754d441c5), so a high rebase cost.
