@@ -19,6 +19,22 @@ struct PreBolusArmedTimer: Codable, Equatable {
     let plannedMinutes: Int
     /// The food type picked for that bolus.
     let mealType: PreBolusMealType
+
+    init(deadline: Date, bolusAt: Date, plannedMinutes: Int, mealType: PreBolusMealType) {
+        self.deadline = deadline
+        self.bolusAt = bolusAt
+        self.plannedMinutes = plannedMinutes
+        self.mealType = mealType
+    }
+
+    /// A timer saved by a build without `mealType` still restores (as "normal").
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deadline = try container.decode(Date.self, forKey: .deadline)
+        bolusAt = try container.decode(Date.self, forKey: .bolusAt)
+        plannedMinutes = try container.decode(Int.self, forKey: .plannedMinutes)
+        mealType = try container.decodeIfPresent(PreBolusMealType.self, forKey: .mealType) ?? .normal
+    }
 }
 
 /// The armed pre-bolus timer: one pending local notification ("Laikas valgyti") and `deadline`, which the

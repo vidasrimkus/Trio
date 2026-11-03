@@ -78,7 +78,7 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.notifier.deadline == now.addingTimeInterval(900))
     }
 
-    @Test("No-wait plans schedule nothing", arguments: [PreBolusPlan.hidden, .noData, .eatNow, .alreadyEating])
+    @Test("No-wait plans schedule nothing", arguments: [PreBolusPlan.hidden, .noData, .eatNow, .bolusWhileEating, .alreadyEating])
     func nothingScheduled(plan: PreBolusPlan) {
         let f = Fixture()
         let callback = f.notifier.arm(plan: plan, now: now)
@@ -287,6 +287,19 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.notifier.mealType(now: now) == .fast)
         _ = f.notifier.arm(plan: .eatNow, mealType: .fast, now: now)
         #expect(f.notifier.mealType(now: now) == .normal)
+    }
+
+    @Test("A timer saved without a food type (older build) restores as „normal“") func legacyArmedTimer() throws {
+        let f = Fixture()
+        let legacy = #"{"deadline":0,"bolusAt":-900,"plannedMinutes":15}"#
+        f.defaults.set(Data(legacy.utf8), forKey: PreBolusConstants.armedTimerKey)
+        let notifier = f.makeNotifier()
+        #expect(notifier.deadline == Date(timeIntervalSinceReferenceDate: 0))
+        notifier.finalizeIfExpired(now: Date(timeIntervalSinceReferenceDate: 60))
+        #expect(f.reporter.events == [.mealStarted(
+            at: Date(timeIntervalSinceReferenceDate: 0), bolusAt: Date(timeIntervalSinceReferenceDate: -900),
+            plannedMin: 15, actualMin: 15, via: .timer, mealType: "normal"
+        )])
     }
 
     @Test("Food type goes into meal_started and survives a relaunch") func mealTypeInEvent() {

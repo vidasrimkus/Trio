@@ -10,7 +10,8 @@ struct PreBolusTimerRow: View {
 
     var body: some View {
         if carbs > 0 {
-            // Read here, in `body`, so a pick re-renders the row (Observation tracks this access).
+            // Read here, in `body`, so a pick re-renders the row (Observation tracks this access). The plan below
+            // reads it again at each minute tick, so an expired pick shows as "Įprastas" exactly as `arm` will use it.
             let selected = notifier.mealType()
             VStack(alignment: .leading, spacing: 6) {
                 Picker(
@@ -29,9 +30,8 @@ struct PreBolusTimerRow: View {
                         carbs: carbs,
                         readings: PreBolusReading.from(glucose),
                         now: context.date,
-                        mealType: selected
-                    )
-                    if let text = Self.text(for: plan) {
+                        mealType: notifier.mealType(now: context.date)
+                    )                    if let text = Self.text(for: plan) {
                         Text(text)
                             .font(.callout)
                             .foregroundStyle(.secondary)
