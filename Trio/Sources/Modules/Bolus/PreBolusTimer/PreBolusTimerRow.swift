@@ -31,7 +31,8 @@ struct PreBolusTimerRow: View {
                         readings: PreBolusReading.from(glucose),
                         now: context.date,
                         mealType: notifier.mealType(now: context.date)
-                    )                    if let text = Self.text(for: plan) {
+                    )
+                    if let text = Self.text(for: plan) {
                         Text(text)
                             .font(.callout)
                             .foregroundStyle(.secondary)
