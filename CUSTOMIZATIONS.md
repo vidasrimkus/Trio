@@ -341,7 +341,9 @@ the < 5.0 rule). Newest CGM older than 10 min → "Nėra šviežių CGM duomenų
   `HomeRootView.swift` (`.overlay(alignment: .bottom)` on the meal-panel slot), and the two Cancel buttons
   (`HomeStateModel.cancelBolus`, `TreatmentsStateModel.cancelBolus`: `cancelBolus(nil)` →
   `cancelBolus(PreBolusNotifier.shared.cancelCallback)`). Plus `project.pbxproj`.
-- Disarmed when the bolus fails (enactBolus callback `false` — covers verifyStatus, no pump, pump error), when a
+- Disarmed when the bolus fails before reaching the pump (enactBolus callback `false` after verifyStatus or with
+  no pump); a pump error after the command (`APSError.pumpError` on `apsManager.lastError`, delivery
+  uncertain) keeps the reminder (decision 2026-11-03). Also disarmed when a
   Cancel button cancels successfully, or when a newer wait replaces it. A later bolus without a wait (a
   correction, carbs 0, eat now…) leaves a running timer alone. Cancellation is not inferred from
   `bolusProgress` (a finished bolus can end below 100 % — rejected in review). `APSManager` unchanged.

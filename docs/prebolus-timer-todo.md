@@ -7,9 +7,9 @@
   stays armed with no bolus. Reason: needs Max Bolus = 0; `addPumpInsulin` already guards amount > 0.
 - `deadline` is in memory only: after an app relaunch the Home countdown is gone while the notification still
   fires. Reason: the notification (the part that matters) survives.
-- A pump error with uncertain delivery (e.g. Omnipod) goes through `callback(false)` and removes the reminder
-  although insulin may have been delivered; "Bolus failed — check pump history" is shown by APSManager.
-  Decide with Vidas whether failures should keep the reminder. Reason: spec says remove on failure.
+- Decided 2026-11-03: a pump error after the command (`APSError.pumpError`, delivery uncertain) KEEPS the
+  reminder; only failures before the pump (pre-checks, no pump) remove it. A pump that rejects a bolus outright
+  therefore also keeps it (reminder with no insulin → high, not hypo). Reason: the safer direction.
 - A bolus cancelled outside Trio's two Cancel buttons (pump manager UI, the pump's own button) leaves the timer
   armed: the reminder comes on time with less insulin given. Reason: the safer direction (high, not hypo); the
   progress-based detection that caught it was removed because it also fired after full delivery.

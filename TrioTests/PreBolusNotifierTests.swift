@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 import UserNotifications
@@ -72,6 +73,30 @@ private final class MockCenter: PreBolusNotificationCenter {
         try await settle()
         #expect(center.removed.count == 2) // the replace-clear inside arm, then the failure
         #expect(notifier.deadline == nil)
+    }
+
+    @Test("Pump error after the command (delivery uncertain) keeps the reminder") func uncertainDelivery() async throws {
+        let center = MockCenter()
+        let notifier = PreBolusNotifier(center: center)
+        let lastError = CurrentValueSubject<Error?, Never>(nil)
+        let callback = notifier.arm(plan: wait(10), lastError: lastError.eraseToAnyPublisher(), now: now)
+        lastError.send(APSError.pumpError(NSError(domain: "pump", code: 1)))
+        callback?(false, "Error! Bolus failed with error: …")
+        try await settle()
+        #expect(notifier.deadline == now.addingTimeInterval(600))
+        #expect(center.removed.count == 1) // only the replace-clear inside arm
+    }
+
+    @Test("Pre-check failure (no bolus sent) removes it, also with a stale pump error from before") func preCheckFailure() async throws {
+        let center = MockCenter()
+        let notifier = PreBolusNotifier(center: center)
+        let lastError = CurrentValueSubject<Error?, Never>(APSError.pumpError(NSError(domain: "old", code: 2)))
+        let callback = notifier.arm(plan: wait(10), lastError: lastError.eraseToAnyPublisher(), now: now)
+        lastError.send(APSError.invalidPumpState(message: "Pump suspended"))
+        callback?(false, "Error! Failed to enact bolus.")
+        try await settle()
+        #expect(notifier.deadline == nil)
+        #expect(center.removed.count == 2)
     }
 
     @Test("Successful enact keeps it") func succeeded() async throws {

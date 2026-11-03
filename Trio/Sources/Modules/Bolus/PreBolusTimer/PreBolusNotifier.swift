@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import UserNotifications
@@ -12,7 +13,8 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
 
 /// The armed pre-bolus timer: one pending local notification ("Laikas valgyti") and `deadline`, which the
 /// Home countdown reads — one source of truth. Armed at "Enact bolus" when the plan is a wait; removed when
-/// that bolus fails (enactBolus callback false), when the user cancels a bolus (Cancel buttons pass
+/// that bolus fails before reaching the pump (enactBolus callback false without an `APSError.pumpError`;
+/// a pump error means delivery is uncertain, so the reminder stays), when the user cancels a bolus (Cancel buttons pass
 /// `cancelCallback`), or when a newer wait replaces it. A bolus without a wait (correction, eat now…) leaves a
 /// running timer alone. Uses the notification permission Trio already holds; no AlertManager history, so
 /// nothing replays after a restart.
@@ -27,6 +29,7 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
     /// The arm of the bolus enacted last; nil when that bolus had no wait (a correction). A Cancel only
     /// removes the timer when it cancels the bolus that armed it.
     @ObservationIgnored private var runningArmID: UUID?
+    @ObservationIgnored private var errorSubscription: AnyCancellable?
 
     init(center: PreBolusNotificationCenter) {
         self.center = center
@@ -34,17 +37,35 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
 
     /// The hook in `Treatments.StateModel.addPumpInsulin`: plans from the bolus screen's data and returns the
     /// callback to pass to `apsManager.enactBolus`. `glucose` is newest first; only the last hour is read.
-    @MainActor func arm(carbs: Decimal, glucose: [GlucoseStored], now: Date = Date()) -> ((Bool, String) -> Void)? {
+    @MainActor func arm(
+        carbs: Decimal,
+        glucose: [GlucoseStored],
+        lastError: AnyPublisher<Error?, Never>,
+        now: Date = Date()
+    ) -> ((Bool, String) -> Void)? {
         let plan = PreBolusPlanner.plan(carbs: carbs, readings: PreBolusReading.from(Array(glucose.prefix(12))), now: now)
-        return arm(plan: plan, now: now)
+        return arm(plan: plan, lastError: lastError, now: now)
     }
 
-    @MainActor func arm(plan: PreBolusPlan, now: Date = Date()) -> ((Bool, String) -> Void)? {
+    /// `lastError`: `apsManager.lastError`. Its pump-error path sends `APSError.pumpError` right before
+    /// `callback(false)` (the command reached the pump: delivery uncertain); the pre-checks send
+    /// `invalidPumpState` or nothing (no bolus was sent).
+    @MainActor func arm(
+        plan: PreBolusPlan,
+        lastError: AnyPublisher<Error?, Never> = Empty().eraseToAnyPublisher(),
+        now: Date = Date()
+    ) -> ((Bool, String) -> Void)? {
         guard case let .wait(minutes, until) = plan, minutes > 0 else {
             runningArmID = nil // a bolus without a wait is running now; a Cancel of it keeps the timer
             return nil
         }
         disarm() // a newer wait replaces the previous one
+
+        // Set synchronously on the thread that sends it, before that thread calls the callback.
+        var pumpWasCommanded = false
+        errorSubscription = lastError.dropFirst().sink { error in
+            if let apsError = error as? APSError, case .pumpError = apsError { pumpWasCommanded = true }
+        }
 
         let id = UUID()
         armID = id
@@ -63,8 +84,14 @@ extension UNUserNotificationCenter: PreBolusNotificationCenter {}
         )
 
         return { [weak self] success, _ in
-            guard !success else { return }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.disarm(ifArmed: id) } }
+            let keep = success || pumpWasCommanded // uncertain delivery: keep the reminder
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.armID == id else { return }
+                    self.errorSubscription = nil
+                    if !keep { self.disarm(ifArmed: id) }
+                }
+            }
         }
     }
 
