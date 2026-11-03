@@ -5,11 +5,16 @@ import Testing
 @Suite("Pre-bolus planner") struct PreBolusPlannerTests {
     let now = Date(timeIntervalSince1970: 1_793_640_000) // fixed clock
 
-    /// mg/dL whose `asMmolL` (what Trio shows) is exactly `mmol`.
+    /// mg/dL whose `asMmolL` (what Trio shows) is exactly `mmol`. Searched, not computed: converting the
+    /// long-mantissa quotient through NSDecimalNumber → Int is unreliable.
     func mg(_ mmol: String) -> Int {
-        let target = Decimal(string: mmol)!
-        let guess = Int(truncating: (target / GlucoseUnits.exchangeRate) as NSDecimalNumber)
-        return ((guess - 3) ... (guess + 3)).first { $0.asMmolL == target }!
+        guard let target = Decimal(string: mmol, locale: Locale(identifier: "en_US_POSIX")),
+              let found = (0 ... 700).first(where: { $0.asMmolL == target })
+        else {
+            Issue.record("no mg/dL value shows as \(mmol) mmol/L")
+            return 0
+        }
+        return found
     }
 
     /// Readings every 5 min ending at `now`, oldest first: e.g. ["5.3", "5.2", "5.1", "5.0"].
