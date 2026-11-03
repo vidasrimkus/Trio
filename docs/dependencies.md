@@ -11,8 +11,8 @@ from `.gitmodules`, `git ls-tree HEAD` and the two `Package.resolved` files; kee
 
 ```json
 {
-  "generated_from": "feature/log-shipper 5c6b74a84",
-  "generated_at": "2026-11-02",
+  "generated_from": "upgrade/v1.0.2 900c65237",
+  "generated_at": "2026-11-03",
   "check": "HEAD https://github.com/<owner>/<repo> must answer 200; for submodules also GET https://api.github.com/repos/<owner>/<repo>/commits/<pinned_commit> must answer 200",
   "submodules": [
     {
@@ -20,7 +20,7 @@ from `.gitmodules`, `git ls-tree HEAD` and the two `Package.resolved` files; kee
       "path": "LoopKit",
       "url": "https://github.com/vidasrimkus/LoopKit.git",
       "branch": null,
-      "pinned_commit": "d52c298e3e3fe640e2ae1c5cef885da5daaa58cb",
+      "pinned_commit": "f974241f5f25053d51da3e80833c85b13c387e6f",
       "forked_from": "https://github.com/loopandlearn/LoopKit.git"
     },
     {
@@ -28,56 +28,56 @@ from `.gitmodules`, `git ls-tree HEAD` and the two `Package.resolved` files; kee
       "path": "CGMBLEKit",
       "url": "https://github.com/loopandlearn/CGMBLEKit.git",
       "branch": null,
-      "pinned_commit": "7b660d22a447a6ea5e800dbb30b2c1b13864f5bc"
+      "pinned_commit": "ea224e771fb3329a957a753296232c62a003a9fe"
     },
     {
       "name": "dexcom-share-client-swift",
       "path": "dexcom-share-client-swift",
       "url": "https://github.com/loopandlearn/dexcom-share-client-swift.git",
       "branch": null,
-      "pinned_commit": "0f71fa2a450f55a92cff62e183d87c86b9c6633a"
+      "pinned_commit": "ff0d71433447af3c93dac450d95c14b63f58f417"
     },
     {
       "name": "RileyLinkKit",
       "path": "RileyLinkKit",
       "url": "https://github.com/loopandlearn/RileyLinkKit",
       "branch": null,
-      "pinned_commit": "7ac340a4c3a3ec18e16264d0468474b04485ce8f"
+      "pinned_commit": "049f0d51b2fb90fa5180f3f62555d8c661b55968"
     },
     {
       "name": "G7SensorKit",
       "path": "G7SensorKit",
       "url": "https://github.com/loopandlearn/G7SensorKit.git",
       "branch": null,
-      "pinned_commit": "c2abb4f096351271909c358f4d4212bb92575700"
+      "pinned_commit": "dd91f465b8b7392354b74463b9b9cc7aae32db9f"
     },
     {
       "name": "MinimedKit",
       "path": "MinimedKit",
       "url": "https://github.com/loopandlearn/MinimedKit.git",
       "branch": null,
-      "pinned_commit": "a9bf9ea5f6d882dfd48179c0f696fc7b27ec196a"
+      "pinned_commit": "a7b26858e3073ac8881e7303b675c6b0f8c51ee9"
     },
     {
       "name": "LibreTransmitter",
       "path": "LibreTransmitter",
       "url": "https://github.com/loopandlearn/LibreTransmitter.git",
       "branch": null,
-      "pinned_commit": "125745be2ac82f42a2d2f4e11f639ef624c9cd37"
+      "pinned_commit": "41105123c3c4fb5c55ce89a38630cea2f8f7a17a"
     },
     {
       "name": "TidepoolService",
       "path": "TidepoolService",
       "url": "https://github.com/loopandlearn/TidepoolService.git",
       "branch": null,
-      "pinned_commit": "986c08203f12bdf1b28b231e448091f9abaaa389"
+      "pinned_commit": "99ac3544f8462973f6ea886d1a46c2954ad0cc0f"
     },
     {
       "name": "DanaKit",
       "path": "DanaKit",
       "url": "https://github.com/vidasrimkus/DanaKit",
       "branch": null,
-      "pinned_commit": "a2d3aa45810259283322c9af834fda181860b3ee",
+      "pinned_commit": "e157a861c691f44c84df6071233edb935c06e7dc",
       "forked_from": "https://github.com/loopandlearn/DanaKit"
     },
     {
@@ -85,14 +85,14 @@ from `.gitmodules`, `git ls-tree HEAD` and the two `Package.resolved` files; kee
       "path": "MedtrumKit",
       "url": "https://github.com/loopandlearn/MedtrumKit",
       "branch": null,
-      "pinned_commit": "afa2485ac9ae7cf275de09f3c3f7a8718486514e"
+      "pinned_commit": "ef866fa68db22932271af9bce86372ced8604203"
     },
     {
       "name": "OmnipodKit",
       "path": "OmnipodKit",
       "url": "https://github.com/vidasrimkus/OmnipodKit",
       "branch": null,
-      "pinned_commit": "4e923d77695cbff9983ef1c252a785d7af588300",
+      "pinned_commit": "043b91dbf1958d26c55d927a6a8d651bc91f208d",
       "forked_from": "https://github.com/loopandlearn/OmnipodKit"
     },
     {
@@ -100,36 +100,37 @@ from `.gitmodules`, `git ls-tree HEAD` and the two `Package.resolved` files; kee
       "path": "AccuChekKit",
       "url": "https://github.com/loopandlearn/AccuChekKit",
       "branch": null,
-      "pinned_commit": "e9641779196300ca2d7699e2e69eb881be0c6fe5"
+      "pinned_commit": "4f8c3a8cb50e68a979bdbed2e207aca00e4b35e0"
     },
     {
       "name": "EversenseKit",
       "path": "EversenseKit",
       "url": "https://github.com/loopandlearn/EversenseKit",
       "branch": null,
-      "pinned_commit": "063eb66e21e1555edf45e01548ab948af6a79519"
+      "pinned_commit": "e1bb6faf01bb4bd79872ae6d12787aea8bfe2ad5"
     },
     {
-      "name": "LibreCRKit",
-      "path": "LibreCRKit",
-      "url": "https://github.com/vidasrimkus/LibreCRKit.git",
-      "branch": "trio",
-      "pinned_commit": "24d5617f703089a36f4261c3ab84f2ac505a8f1a",
-      "forked_from": "https://github.com/pov-it/LibreCRKit.git"
+      "name": "RoundWhiteDiscKit",
+      "path": "RoundWhiteDiscKit",
+      "url": "https://github.com/vidasrimkus/RoundWhiteDiscKit.git",
+      "branch": "main",
+      "pinned_commit": "e66da6cc34680fecbbb87812279163dcc1a842b4",
+      "forked_from": "https://github.com/loopandlearn/RoundWhiteDiscKit.git"
     },
     {
       "name": "LibreLoop",
       "path": "LibreLoop",
-      "url": "https://github.com/loopandlearn/LibreLoop.git",
-      "branch": "trio",
-      "pinned_commit": "d98a9ee52398c1e867f7c044b1dc10e6aaa8fce0"
+      "url": "https://github.com/vidasrimkus/LibreLoop.git",
+      "branch": "legacy-loopkit-compat",
+      "pinned_commit": "c6e9cc158b1922edb147a0ac3bd2ccc8e8541aa9",
+      "forked_from": "https://github.com/loopandlearn/LibreLoop.git"
     },
     {
       "name": "LoopAlgorithm",
       "path": "LoopAlgorithm",
       "url": "https://github.com/vidasrimkus/LoopAlgorithm.git",
       "branch": null,
-      "pinned_commit": "7d016fb55ded96ef25ef612a153c69a9c911ca19",
+      "pinned_commit": "4604ee36f5acc3d00b2d07331a3a477570761374",
       "forked_from": "https://github.com/loopandlearn/LoopAlgorithm.git"
     }
   ],

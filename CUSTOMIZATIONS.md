@@ -1,6 +1,7 @@
 # CUSTOMIZATIONS — vidasrimkus/Trio
 
-Every difference between this fork and upstream **nightscout/Trio v1.0.1** (`c0160aeaf`).
+Every difference between this fork and upstream **nightscout/Trio v1.0.2** (`0b29cd534`; merged on branch
+`upgrade/v1.0.2` 2026-11-03, before that v1.0.1 `c0160aeaf`).
 Read this first before any upstream update (procedure in `CLAUDE.md`).
 
 ## 1. Remote command `set_dosing_mode`
@@ -104,28 +105,30 @@ If any of these contracts changes, `vidasrimkus/LoopFollow` and `t1d-monitor` mu
 
 ## 5. Pumps in use and Dana limitations (not changed by us — upstream/DanaKit behaviour)
 
-Two pumps are used and swapped from time to time: **Dana** (DanaKit, `loopandlearn/DanaKit@a2d3aa4`) and
-**Omnipod DASH** (OmnipodKit, `loopandlearn/OmnipodKit@4e923d7`). Facts read from the pinned driver sources:
+Two pumps are used and swapped from time to time: **Dana** (DanaKit, `loopandlearn/DanaKit@e157a86`) and
+**Omnipod DASH** (OmnipodKit, `loopandlearn/OmnipodKit@043b91d`). Facts read from the pinned driver sources
+(re-checked for the v1.0.2 pins; the facts are unchanged, only line numbers moved):
 
 1. **Trio's basal schedule is NOT written to a Dana when it is paired.** Trio passes its schedule as initial
    settings (`PumpConfigStateModel.swift:20-35`), DanaKit only stores it in its own state
-   (`DanaUICoordinator.swift:74-76`). The only code that writes a schedule to the pump is
-   `syncBasalRateSchedule` (`DanaKitPumpManager.swift:1091`), called only by Trio's Basal Profile editor.
+   (`DanaUICoordinator.swift:73-74`). The only code that writes a schedule to the pump is
+   `syncBasalRateSchedule` (`DanaKitPumpManager.swift:1097`), called by Trio's Basal Profile editor (and Autotune).
    Until then the pump runs whatever profile it already had; Trio does not detect a difference
-   (`syncDeliveryLimits` reads the pump's rates but keeps only `maxBasal`, `DanaKitPumpManager.swift:1199-1275`).
+   (`syncDeliveryLimits` reads the pump's rates but keeps only `maxBasal`, `DanaKitPumpManager.swift:1203-1279`).
 2. **Trio's temp basals reach a Dana as a percentage** of the schedule DanaKit holds
-   (`absoluteBasalRateToPercentage`, `DanaKitPumpManager.swift:1359-1378`); the pump applies that
+   (`absoluteBasalRateToPercentage`, `DanaKitPumpManager.swift:1361-1380`); the pump applies that
    percentage to its own active profile. If the two differ, every non-zero temp delivers a different
    amount than Trio intended (0 % temps are unaffected).
 3. **Only whole-hour segments are safe on a Dana.** `convertBasal` (`DanaKitPumpManagerState.swift:390-407`)
    maps the schedule onto 24 hourly rates; a segment starting off the hour (e.g. 02:30) stops the index
    from advancing, so every later hour gets the previous rate on the pump. Trio's editor allows a
    30-minute grid, so this can happen from the phone too.
-4. **Rates are encoded as `UInt16(rate * 100)`** (`DanaBasalSetProfileRate.swift`), which truncates some
+4. **Rates are encoded as `UInt16(rate * 100)`** (`DanaBasalSetProfileRate.swift`; unchanged in e157a86 — its
+   "round to 2 decimals" fix is for temp basals only), which truncates some
    values by 0.01 U/h (e.g. 0.29 → 0.28; at 0.05 steps 1.15, 2.05, 2.30, 2.55, 4.10, 4.35, 4.60, 4.85). The full
    list for 0.01–5.00 U/h on Trio's Decimal path (65 values) is the Dana truncation vector in §7.
 5. Omnipod DASH, by contrast, stops all delivery (`cancelDelivery(.all)`) before programming a new schedule
-   (`OmniPumpManager.swift:1834-1901`); a broken connection between the two steps leaves the pod suspended
+   (`OmniPumpManager.swift:1882-1960`); a broken connection between the two steps leaves the pod suspended
    until it is resumed on the phone.
 
 **Manual procedure after every Dana (re)connection** (new pairing, or back from Omnipod DASH):
@@ -287,30 +290,28 @@ deleted bolus and reports it after the save), `SettingsRootView.swift` (+4: Navi
 **After installing a build with this:** open Settings → Log Shipper, enter URL and token, enable, press Send now,
 check the status rows and the server's `log_batches`. Then confirm pump, CGM, loop and dosing mode as for any build.
 
-## 9. Submodule `LibreCRKit` — URL moved to our own fork
+## 9. Submodules hosted under `vidasrimkus`
 
-On 2026-11-02 `https://github.com/loopandlearn/LibreCRKit.git` (the URL in upstream v1.0.1's `.gitmodules`)
-returned 404 on GitHub, so every checkout with submodules — `unit_tests.yml` and `4. Build Trio` — fails before
-compiling. Upstream v1.0.2 (2026-10-07) replaced LibreCRKit with RoundWhiteDiscKit; our base is still v1.0.1.
+History: on 2026-11-02 `loopandlearn/LibreCRKit` (in upstream v1.0.1's `.gitmodules`) returned 404, so every
+checkout with submodules failed; we moved it to `vidasrimkus/LibreCRKit` and, as insurance, the pump/loop
+submodules too. Upstream v1.0.2 replaced LibreCRKit with RoundWhiteDiscKit; with the upgrade (2026-11-03)
+LibreCRKit is gone from the build (`vidasrimkus/LibreCRKit` stays, unused) and the same rule now covers the two
+Libre submodules v1.0.2 changed.
 
-Fix: `vidasrimkus/LibreCRKit` is a fork of `pov-it/LibreCRKit` (branch `trio`, head = the commit Trio pins,
-`24d5617f703089a36f4261c3ab84f2ac505a8f1a`, same SHA → identical content). `.gitmodules` points there; the pinned
-commit is unchanged. First done on `feature/log-shipper`; **`main` needs the same one-line `.gitmodules` change
-before the next build.** Goes away with the upgrade to v1.0.2 (separate task).
+**Rule:** same pinned commits as upstream; the `.gitmodules` URL is our only change. On an upstream upgrade, keep
+our URLs and move the pinned commits (the forks copy all upstream branches, check the new pin is on one of them).
 
-**Submodules hosted under `vidasrimkus` (same pinned commits as upstream v1.0.1; `.gitmodules` URL is the only change):**
-
-| Submodule | Our fork (of) | Pinned commit | Moved |
+| Submodule | Our fork (of) | Pinned commit (v1.0.2) | Moved |
 |---|---|---|---|
-| LibreCRKit (branch `trio`) | `vidasrimkus/LibreCRKit` (pov-it/LibreCRKit) | `24d5617f703089a36f4261c3ab84f2ac505a8f1a` | 2026-11-02 |
-| DanaKit | `vidasrimkus/DanaKit` (loopandlearn/DanaKit) | `a2d3aa45810259283322c9af834fda181860b3ee` | 2026-11-02 |
-| OmnipodKit | `vidasrimkus/OmnipodKit` (loopandlearn/OmnipodKit) | `4e923d77695cbff9983ef1c252a785d7af588300` | 2026-11-02 |
-| LoopKit | `vidasrimkus/LoopKit` (loopandlearn/LoopKit) | `d52c298e3e3fe640e2ae1c5cef885da5daaa58cb` | 2026-11-02 |
-| LoopAlgorithm | `vidasrimkus/LoopAlgorithm` (loopandlearn/LoopAlgorithm) | `7d016fb55ded96ef25ef612a153c69a9c911ca19` | 2026-11-02 |
+| DanaKit | `vidasrimkus/DanaKit` (loopandlearn/DanaKit) | `e157a861c` | 2026-11-02 |
+| OmnipodKit | `vidasrimkus/OmnipodKit` (loopandlearn/OmnipodKit) | `043b91dbf` | 2026-11-02 |
+| LoopKit | `vidasrimkus/LoopKit` (loopandlearn/LoopKit) | `f974241f5` | 2026-11-02 |
+| LoopAlgorithm | `vidasrimkus/LoopAlgorithm` (loopandlearn/LoopAlgorithm) | `4604ee36f` | 2026-11-02 |
+| RoundWhiteDiscKit (branch `main`) | `vidasrimkus/RoundWhiteDiscKit` (loopandlearn/RoundWhiteDiscKit) | `e66da6cc3` | 2026-11-03 |
+| LibreLoop (branch `legacy-loopkit-compat`) | `vidasrimkus/LibreLoop` (loopandlearn/LibreLoop) | `c6e9cc158` | 2026-11-03 |
 
 The other 11 submodules and all SPM packages still point at their upstream owners (decision 2026-11-02). The full
-list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor checks it daily. **`main` needs the same
-`.gitmodules` URLs before the next build.** On an upstream upgrade, keep our URLs and move the pinned commits.
+list with URLs and pinned revisions is `docs/dependencies.md`; t1d-monitor checks it daily.
 
 Existing clones keep the old URLs in `.git/config` until `git submodule sync --recursive` is run once after
-pulling this change (CI and the browser build clone fresh, so they are unaffected).
+pulling a `.gitmodules` change (CI and the browser build clone fresh, so they are unaffected).

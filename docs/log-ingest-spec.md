@@ -142,7 +142,7 @@ phone restarted). Server rule:
 
 | Always | Replacement |
 |---|---|
-| Dana keys in every form DanaKit logs them: `pairingKey: <hex>`, `Pairing key: <hex>`, `random pairing key: <hex>`, `random sync key: <n>` (`PeripheralManager.swift` 370, 425, 456; case-insensitive) | `…: [redacted]` |
+| Dana keys in every form DanaKit logs them: `pairingKey: <hex>`, `Pairing key: <hex>`, `random pairing key: <hex>`, `random sync key: <n>` (DanaKit e157a86 `PeripheralManager.swift` 328, 383, 414; case-insensitive) | `…: [redacted]` |
 | `Sending pairing request … Data: <hex>`, `Sending Passkey check … Data:`, `Passkey request failed … Data:` | `Data: [redacted]` |
 | `Device token updated: <APNS token>` | `[redacted]` |
 | `token=`, `secret=`, `api-secret=`, `api_secret=`, `password=`, `passkey=`, `pin=` values (query strings, case-insensitive) | `=[redacted]` |

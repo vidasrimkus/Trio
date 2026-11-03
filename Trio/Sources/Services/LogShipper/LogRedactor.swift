@@ -4,8 +4,8 @@ import Foundation
 /// byte offsets always refer to the raw file.
 ///
 /// Always redacted: the Dana pairing keys in every form DanaKit logs them (`pairingKey:`,
-/// `Pairing key:`, `random pairing key:`, `random sync key:` — `PeripheralManager.swift` 370, 425,
-/// 456), the pairing/passkey packets, the APNS device token (`TrioRemoteControl+APNS.swift`),
+/// `Pairing key:`, `random pairing key:`, `random sync key:` — DanaKit e157a86 `PeripheralManager.swift`
+/// 328, 383, 414), the pairing/passkey packets, the APNS device token (`TrioRemoteControl+APNS.swift`),
 /// query-string secrets and bearer tokens. Around a pairing (a few lines before, the exchange
 /// after it) every packet dump (`Data:`, `Receiving data:`, `Encoded data:`, `decrypt data:`) is
 /// redacted too; the rest of the batch keeps its packet diagnostics.

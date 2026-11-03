@@ -282,6 +282,31 @@ import Testing
         #expect(kept.contains("Decoding successful! Data: ffee"))
     }
 
+    /// The exact key/pairing lines of DanaKit e157a86 (Trio v1.0.2 pin; `PeripheralManager.swift` was rewritten,
+    /// line numbers moved 370/425/456 → 328/383/414, the texts stayed). A DanaKit bump must keep this green.
+    @Test("DanaKit e157a86 pairing lines are redacted") func redactDanaKitV102Lines() {
+        let chunk = """
+        [2026-11-03T10:00:00+0200 DEBUG] PeripheralManager.swift - sendFirstMessageEncryption()#287: Sending Initial encryption request. Data: a5a50000
+        [2026-11-03T10:00:01+0200 DEBUG] PeripheralManager.swift - sendV3PairingInformationEmpty()#328: Setting encryption keys. Pairing key: 0a0b0c0d0e0f, random pairing key: 1a1b1c, random sync key: 17
+        [2026-11-03T10:00:02+0200 DEBUG] PeripheralManager.swift - sendPairingRequest()#342: Sending pairing request. Data: 2b2c2d
+        [2026-11-03T10:00:03+0200 DEBUG] PeripheralManager.swift - sendPassKeyCheck(_:)#375: Sending Passkey check. Data: 3c3d3e
+        [2026-11-03T10:00:04+0200 INFO] PeripheralManager.swift - finishV3Pairing(_:_:)#383: Storing security keys: Pairing key: 4d4e4f404142, random pairing key: 5a5b5c
+        [2026-11-03T10:00:05+0200 ERROR] PeripheralManager.swift - processPairingRequest(_:)#407: Passkey request failed. Data: 6e6f60
+        [2026-11-03T10:00:06+0200 INFO] PeripheralManager.swift - processPairingRequest2(_:)#414: processPairingRequest2 -> pairingKey: 7a7b
+        [2026-11-03T10:00:07+0200 DEBUG] PeripheralManager.swift - parseReceivedValue(_:)#606: Received message! Starting to decrypt data: 8c8d8e
+        [2026-11-03T10:00:08+0200 DEBUG] PeripheralManager.swift - parseReceivedValue(_:)#614: Decoding successful! Data: 9e9f90
+        """
+        let out = LogRedactor.redact(chunk)
+        for secret in ["a5a50000", "0a0b0c0d0e0f", "1a1b1c", "sync key: 17", "2b2c2d", "3c3d3e", "4d4e4f404142", "5a5b5c", "6e6f60", "7a7b", "8c8d8e", "9e9f90"] {
+            #expect(!out.contains(secret), "\(secret) leaked")
+        }
+        #expect(out.contains("Storing security keys: Pairing key: [redacted], random pairing key: [redacted]"))
+        #expect(out.contains("Sending Passkey check. Data: [redacted]"))
+        #expect(out.contains("Passkey request failed. Data: [redacted]"))
+        #expect(out.contains("processPairingRequest2 -> pairingKey: [redacted]"))
+        #expect(out.contains("Sending Initial encryption request. Data: [redacted:pairing]"))
+    }
+
     @Test("APNS device token is redacted") func redactDeviceToken() {
         let out = LogRedactor.redact("... - DEV: Device token updated: 0123abcd4567")
         #expect(out.hasSuffix("Device token updated: [redacted]"))
