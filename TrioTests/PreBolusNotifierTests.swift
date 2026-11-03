@@ -250,12 +250,15 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.makeNotifier().deadline == nil)
     }
 
-    @Test("Relaunch: the bolus Cancel button still removes the restored timer") func relaunchCancelBolus() async throws {
+    @Test("Relaunch: a bolus Cancel (another bolus by then) keeps the restored timer; „Atšaukti“ removes it")
+    func relaunchCancelBolus() async throws {
         let f = Fixture()
         _ = f.notifier.arm(plan: wait(15), now: now)
         let relaunched = f.makeNotifier()
         relaunched.cancelCallback(true, "Bolus cancelled successfully.")
         try await settle()
+        #expect(relaunched.deadline == now.addingTimeInterval(900))
+        relaunched.cancel()
         #expect(relaunched.deadline == nil)
     }
 

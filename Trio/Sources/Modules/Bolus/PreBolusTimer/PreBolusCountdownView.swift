@@ -1,4 +1,3 @@
-import AudioToolbox
 import SwiftUI
 
 /// Home countdown "🍽️ 12:40" (mm:ss) while a pre-bolus timer is armed (`PreBolusNotifier.deadline`).
@@ -49,12 +48,6 @@ struct PreBolusCountdownView: View {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 }
                 guard !Task.isCancelled else { return }
-                // Silent mode on screen: the banner may come without sound, so vibrate once — only right at the deadline.
-                if notifier.isSilent, UIApplication.shared.applicationState == .active,
-                   Date().timeIntervalSince(deadline) < 30
-                {
-                    AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
-                }
                 notifier.finalizeIfExpired()
             }
         }

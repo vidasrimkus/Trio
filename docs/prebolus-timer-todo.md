@@ -24,6 +24,11 @@
   exact). With the loop stuck (as on 2026-11-03 13:05) it waits until the app is opened. Reason: no extra
   background work for a Note.
 - The silent setting applies from the next timer; a timer already armed keeps its sound. Reason: rare, harmless.
+- The `meal_started` Nightscout Note is fire-and-forget (`uploadNoteTreatment`, no retry), like the other trio
+  events: offline at that moment → only the `DEV:` log line reaches t1d-monitor (via Log Shipper, `log_events`
+  kind `trio_event`). Reason: informational event; the log line is the backup.
+- The Home countdown's own deadline check sleeps with `Task.sleep`, which pauses while the device sleeps; the end
+  is then picked up by the loop-cycle hook. `at` stays the exact deadline. Reason: informational.
 
 ### Evaluated and rejected (2026-11-03): move the carb entry's time to the meal start on "Valgau"
 

@@ -374,8 +374,11 @@ v2 (branch `feature/prebolus-timer-v2`) — the meal start:
   the notification uses `prebolus_silent.caf` (0.5 s of silence, `Resources/Sounds`) instead of the default sound.
   With `sound = nil` iOS shows the banner without vibrating whatever the interruption level (`.timeSensitive` only
   breaks through Focus); with a (silent) sound it vibrates per the system haptics setting — to be confirmed on the
-  phone; footer text: "tik vibracija; jei telefonas nevibruoja – tik vizualinis pranešimas". While Home is on screen
-  at the deadline the app vibrates once itself. Read when a timer is armed. `interruptionLevel` stays `.active`.
+  phone; footer text: "tik vibracija; jei telefonas nevibruoja – tik vizualinis pranešimas". In the foreground the
+  existing `willPresent` shows it with the same (silent) sound — no extra app vibration. Read when a timer is armed.
+  `interruptionLevel` stays `.active`.
+- After a relaunch a bolus Cancel no longer removes the restored timer (the bolus that armed it is long finished);
+  "Atšaukti" does.
 - Files: `PreBolusNotifier.swift`, `PreBolusCountdownView.swift`, `PreBolusConstants.swift`, `TrioEventNotes.swift`,
   `TrioEventReporter.swift`, `LogShipperConfigView.swift`, `Resources/Sounds/prebolus_silent.caf` +
   `project.pbxproj` (IDs `B0B05E1A…18` / `…28`). No upstream file changed beyond v1's hooks.

@@ -56,8 +56,8 @@ struct PreBolusArmedTimer: Codable, Equatable {
         {
             armed = restored
             deadline = restored.deadline
-            // After a relaunch, Cancel buttons can still remove the timer of the bolus that armed it.
-            runningArmID = armID
+            // `runningArmID` stays nil: the bolus that armed it finished before the relaunch, so a later Cancel
+            // belongs to another bolus and keeps the meal timer.
         }
     }
 
