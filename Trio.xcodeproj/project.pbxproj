@@ -458,6 +458,7 @@
 		CAF200000000000000000002 /* Trio/Resources/Sounds/bloop.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000002 /* Trio/Resources/Sounds/bloop.caf */; };
 		CAF200000000000000000003 /* Trio/Resources/Sounds/bright_alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000003 /* Trio/Resources/Sounds/bright_alarm.caf */; };
 		CAF200000000000000000004 /* Trio/Resources/Sounds/chime.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000004 /* Trio/Resources/Sounds/chime.caf */; };
+		B0B05E1A0000000000000028 /* Trio/Resources/Sounds/prebolus_silent.caf in Resources */ = {isa = PBXBuildFile; fileRef = B0B05E1A0000000000000018 /* Trio/Resources/Sounds/prebolus_silent.caf */; };
 		CAF200000000000000000005 /* Trio/Resources/Sounds/clear_chimes.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000005 /* Trio/Resources/Sounds/clear_chimes.caf */; };
 		CAF200000000000000000006 /* Trio/Resources/Sounds/critical.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000006 /* Trio/Resources/Sounds/critical.caf */; };
 		CAF200000000000000000007 /* Trio/Resources/Sounds/crying.caf in Resources */ = {isa = PBXBuildFile; fileRef = CAF100000000000000000007 /* Trio/Resources/Sounds/crying.caf */; };
@@ -1565,6 +1566,7 @@
 		CAF100000000000000000002 /* Trio/Resources/Sounds/bloop.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/bloop.caf; sourceTree = SOURCE_ROOT; };
 		CAF100000000000000000003 /* Trio/Resources/Sounds/bright_alarm.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/bright_alarm.caf; sourceTree = SOURCE_ROOT; };
 		CAF100000000000000000004 /* Trio/Resources/Sounds/chime.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/chime.caf; sourceTree = SOURCE_ROOT; };
+		B0B05E1A0000000000000018 /* Trio/Resources/Sounds/prebolus_silent.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/prebolus_silent.caf; sourceTree = SOURCE_ROOT; };
 		CAF100000000000000000005 /* Trio/Resources/Sounds/clear_chimes.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/clear_chimes.caf; sourceTree = SOURCE_ROOT; };
 		CAF100000000000000000006 /* Trio/Resources/Sounds/critical.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/critical.caf; sourceTree = SOURCE_ROOT; };
 		CAF100000000000000000007 /* Trio/Resources/Sounds/crying.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Trio/Resources/Sounds/crying.caf; sourceTree = SOURCE_ROOT; };
@@ -2715,6 +2717,7 @@
 				CAF100000000000000000002 /* Trio/Resources/Sounds/bloop.caf */,
 				CAF100000000000000000003 /* Trio/Resources/Sounds/bright_alarm.caf */,
 				CAF100000000000000000004 /* Trio/Resources/Sounds/chime.caf */,
+				B0B05E1A0000000000000018 /* Trio/Resources/Sounds/prebolus_silent.caf */,
 				CAF100000000000000000005 /* Trio/Resources/Sounds/clear_chimes.caf */,
 				CAF100000000000000000006 /* Trio/Resources/Sounds/critical.caf */,
 				CAF100000000000000000007 /* Trio/Resources/Sounds/crying.caf */,
@@ -5136,6 +5139,7 @@
 				CAF200000000000000000002 /* Trio/Resources/Sounds/bloop.caf in Resources */,
 				CAF200000000000000000003 /* Trio/Resources/Sounds/bright_alarm.caf in Resources */,
 				CAF200000000000000000004 /* Trio/Resources/Sounds/chime.caf in Resources */,
+				B0B05E1A0000000000000028 /* Trio/Resources/Sounds/prebolus_silent.caf in Resources */,
 				CAF200000000000000000005 /* Trio/Resources/Sounds/clear_chimes.caf in Resources */,
 				CAF200000000000000000006 /* Trio/Resources/Sounds/critical.caf in Resources */,
 				CAF200000000000000000007 /* Trio/Resources/Sounds/crying.caf in Resources */,

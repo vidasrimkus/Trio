@@ -46,6 +46,17 @@ final class BaseTrioEventReporter: TrioEventReporter, Injectable, BolusFailureOb
             .compactMap { $0 }
             .sink { [weak self] error in self?.errorOccurred(error) }
             .store(in: &subscriptions)
+
+        // Pre-bolus timer (CUSTOMIZATIONS §10 v2): `meal_started` goes out through this reporter, and a timer that
+        // ran out while the app was in the background is noticed at the end of the next loop cycle.
+        DispatchQueue.main.async { PreBolusNotifier.shared.reporter = self }
+        apsManager.isLooping
+            .dropFirst()
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { _ in MainActor.assumeIsolated { PreBolusNotifier.shared.finalizeIfExpired() } }
+            .store(in: &subscriptions)
     }
 
     func report(_ event: TrioEvent) {
