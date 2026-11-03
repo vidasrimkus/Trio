@@ -355,6 +355,32 @@ the < 5.0 rule). Newest CGM older than 10 min → "Nėra šviežių CGM duomenų
   re-evaluates once a minute while it is on screen.
 - Tests: `TrioTests/PreBolusPlannerTests.swift`, `TrioTests/PreBolusNotifierTests.swift`.
 
+v2 (branch `feature/prebolus-timer-v2`) — the meal start:
+- Tap on the Home countdown → `confirmationDialog` "Valgau" / "Atšaukti" / "Uždaryti"; the 44 pt slot layout is
+  unchanged. "Valgau" (`markEating`) ends the timer, removes the pending notification and records the meal start =
+  now. "Atšaukti" (`cancel`) removes both and records nothing. The timer running out records meal start = its
+  deadline (`finalizeIfExpired`): called by the countdown at the deadline while Home is visible and by
+  `BaseTrioEventReporter` at the end of every loop cycle (`apsManager.isLooping` → false), so in the background it is
+  noticed within one loop cycle, with the exact deadline as `at`. A "Valgau" tapped after the deadline counts as
+  the timer's end. A bolus failure, a bolus Cancel, or a newer wait (before the old one ran out) record nothing;
+  a newer wait after an old one ran out first reports the old one.
+- Event: `[trio-event v1] meal_started at=<ISO> bolus_at=<ISO> planned_min=<n> actual_min=<n> via=button|timer`
+  (`TrioEvent.mealStarted`, `TrioEventNote.format`), sent through `TrioEventReporter.report` like the other
+  events: Nightscout Note + `DEV:` log line (`docs/log-ingest-spec.md` §6.1). `bolus_at` = the "Enact bolus" tap.
+- The armed timer (`deadline`, `bolusAt`, `plannedMinutes`) is kept in UserDefaults `PreBolusTimer.armed`: a
+  relaunch restores the countdown and still reports the meal start. Found more than 6 h after its deadline it ends
+  without an event. Not `TrioAlertManager`: nothing is shown again, only this state is restored.
+- "Tylus priminimas" (Settings → Log Shipper → Pre-bolus, UserDefaults `PreBolus.silentReminder`, off by default):
+  the notification uses `prebolus_silent.caf` (0.5 s of silence, `Resources/Sounds`) instead of the default sound.
+  With `sound = nil` iOS shows the banner without vibrating whatever the interruption level (`.timeSensitive` only
+  breaks through Focus); with a (silent) sound it vibrates per the system haptics setting — to be confirmed on the
+  phone; footer text: "tik vibracija; jei telefonas nevibruoja – tik vizualinis pranešimas". While Home is on screen
+  at the deadline the app vibrates once itself. Read when a timer is armed. `interruptionLevel` stays `.active`.
+- Files: `PreBolusNotifier.swift`, `PreBolusCountdownView.swift`, `PreBolusConstants.swift`, `TrioEventNotes.swift`,
+  `TrioEventReporter.swift`, `LogShipperConfigView.swift`, `Resources/Sounds/prebolus_silent.caf` +
+  `project.pbxproj` (IDs `B0B05E1A…18` / `…28`). No upstream file changed beyond v1's hooks.
+- Rejected: moving the carb entry's time to the meal start — see `docs/prebolus-timer-todo.md`.
+
 Stage 2 (not built):
 - Food type from the carb entry's note field: `PreBolusPlanner.foodAdjustmentMinutes(note:)` (returns 0), the
   20-min cap still applies after it.

@@ -220,6 +220,7 @@ and as a `DEV:` line in the trio log.
 [trio-event v1] bolus_deleted id=<pump event id> amount=<U, decimal> kind=smb|manual|external [delivered=true|false] at=<ISO-8601 UTC, seconds>
 [trio-event v1] bolus_failed kind=manual [err="<text>"]
 [trio-event v1] pump_error err="<text>"
+[trio-event v1] meal_started at=<ISO-8601 UTC, seconds> bolus_at=<ISO-8601 UTC, seconds> planned_min=<int> actual_min=<int> via=button|timer
 ```
 
 - Fields are space-separated `key=value`; only `err` is quoted. `err` text is one line, `"` replaced by `'`, at most 120
@@ -231,6 +232,12 @@ and as a `DEV:` line in the trio log.
   pre-checks). `pump_error` covers every other `APSManager.lastError` (loop failures, SMB failures, cancel failures),
   at most once per 30 min for the same text. An SMB failure therefore appears as `pump_error`; the amount is in the
   log (`Enact bolus` / `Bolus failed with error`) a few minutes later.
+- `meal_started` (pre-bolus timer, CUSTOMIZATIONS §10 v2): the meal began after a pre-bolus wait. `via=button` —
+  "Valgau" tapped, `at` = the tap; `via=timer` — the wait ran out, `at` = its deadline and `actual_min` =
+  `planned_min`. `bolus_at` = the "Enact bolus" tap, `actual_min` = round((at − bolus_at) / 60 s). Not sent when
+  the timer is cancelled ("Atšaukti", bolus Cancel, bolus failure). A `via=timer` Note may arrive up to one loop
+  cycle after `at` (later if the loop is stuck), and a timer found more than 6 h late sends nothing. Informational:
+  the server records it, no alert.
 - Parse with: `^\[trio-event v(\d+)\] (\w+)((?: \w+=(?:"[^"]*"|\S+))*)$`.
 
 ## 7. Exposure through Cloudflare

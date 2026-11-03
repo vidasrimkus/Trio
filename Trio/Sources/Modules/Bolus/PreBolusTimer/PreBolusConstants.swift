@@ -27,6 +27,14 @@ enum PreBolusConstants {
     static let lookbackTolerance: TimeInterval = 3 * 60
 
     static let notificationIdentifier = "Trio.preBolusTimer"
+    /// UserDefaults: the armed timer (`PreBolusArmedTimer`, JSON), so a relaunch restores it.
+    static let armedTimerKey = "PreBolusTimer.armed"
+    /// UserDefaults: "Tylus priminimas" — vibration only, no sound. Off by default.
+    static let silentReminderKey = "PreBolus.silentReminder"
+    /// Half a second of silence (Resources/Sounds): with a sound iOS also vibrates, with `sound = nil` it does not.
+    static let silentSoundName = "prebolus_silent.caf"
+    /// An expired timer found later than this after its deadline (app not run for hours) ends without `meal_started`.
+    static let maxReplayAge: TimeInterval = 6 * 60 * 60
 
     // Lithuanian on purpose: a single user, and upstream's Localizable.xcstrings stays untouched.
     static let textEatNow = "🍽️ Valgyk iškart"
@@ -35,4 +43,11 @@ enum PreBolusConstants {
     static func textWait(minutes: Int, until: String) -> String { "🍽️ Valgyk po \(minutes) min (\(until))" }
     static let notificationTitle = "Laikas valgyti"
     static let notificationBody = "🍽️ Pre-bolus laikas baigėsi"
+    static let dialogTitle = "Pre-bolus laikmatis"
+    static let dialogMessage = "„Valgau“ – valgymo pradžia dabar. „Atšaukti“ – laikmatis nuimamas, niekas neįrašoma."
+    static let actionEating = "Valgau"
+    static let actionCancel = "Atšaukti"
+    static let actionClose = "Uždaryti"
+    static let settingSilentTitle = "Tylus priminimas"
+    static let settingSilentFooter = "Pre-bolus priminimas „Laikas valgyti“: tik vibracija; jei telefonas nevibruoja – tik vizualinis pranešimas."
 }

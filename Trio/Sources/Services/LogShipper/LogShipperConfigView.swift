@@ -11,6 +11,8 @@ struct LogShipperConfigView: View {
     @State private var status = LogShipperStatus()
     /// What is stored right now (Keychain is read once on appear and after every save, not per render).
     @State private var saved = LogShipperConfig()
+    /// Pre-bolus timer (CUSTOMIZATIONS §10 v2); read when the next timer is armed. Saved at once, not by "Save".
+    @AppStorage(PreBolusConstants.silentReminderKey) private var silentReminder = false
 
     private var isDirty: Bool {
         saved.url != url || saved.token != token || saved.enabled != enabled
@@ -50,6 +52,13 @@ struct LogShipperConfigView: View {
                 .disabled(!isDirty)
                 Button("Send now") { shipper.shipNow() }
                     .disabled(isDirty || !saved.enabled || url.isEmpty || token.isEmpty)
+            }
+
+            Section(
+                header: Text(verbatim: "Pre-bolus"),
+                footer: Text(verbatim: PreBolusConstants.settingSilentFooter)
+            ) {
+                Toggle(isOn: $silentReminder) { Text(verbatim: PreBolusConstants.settingSilentTitle) }
             }
 
             Section(header: Text("Status")) {
