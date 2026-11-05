@@ -52,3 +52,9 @@
   recreated whole; rebase risk in the upstream files above.
 - Decision: NO. `meal_started` already gives the real meal start for analysis without touching therapy data.
   Revisit only if analysis shows the COB model systematically wrong after long (> 20 min) waits.
+
+## v3 Home row on small phones (review 2026-11-05)
+
+- iPhone SE under the iOS 26 tab bar leaves the chart ~140 pt; the 56 pt countdown row would need ~84, but the chart
+  floor is 130 pt, so the bottom zone is pushed ~46 pt down while a timer is armed. Not fixed: the phone in use is a
+  17 Pro Max (chart has plenty of room). If an SE is ever used: shrink the row or overlay it on the chart there.

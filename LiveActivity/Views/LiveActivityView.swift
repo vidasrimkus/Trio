@@ -149,7 +149,7 @@ struct LiveActivityView: View {
                     }
                 }
                 if let mealDeadline = context.state.mealDeadline { // [vidas] CUSTOMIZATIONS §10
-                    PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .lockScreen)
+                    PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .row) // small: chart + items fill the height
                 }
             }
             .addLiveActivityModifiers(isWatchOS: false)
@@ -260,7 +260,7 @@ struct LiveActivityCompactTrailingView: View {
 /// [vidas] CUSTOMIZATIONS §10: the pre-bolus countdown "🍽️ 12:40 iki valgio". The seconds are drawn by the system;
 /// it stops at 0:00 until the app's next update removes it (the "Laikas valgyti" notification fires at the deadline).
 struct PreBolusLiveActivityCountdown: View {
-    enum Size { case compact, lockScreen }
+    enum Size { case compact, row, lockScreen }
 
     let deadline: Date
     let size: Size
@@ -273,10 +273,12 @@ struct PreBolusLiveActivityCountdown: View {
             HStack(spacing: 1) {
                 Text(verbatim: "🍽️").font(.caption2)
                 Text(timerInterval: start ... deadline, countsDown: true)
+                    .font(.caption.weight(.semibold))
                     .monospacedDigit()
                     .frame(maxWidth: 44)
             }
-        case .lockScreen:
+        case .row,
+             .lockScreen:
             HStack(spacing: 4) {
                 Text(verbatim: "🍽️")
                 Text(timerInterval: start ... deadline, countsDown: true)
@@ -285,7 +287,7 @@ struct PreBolusLiveActivityCountdown: View {
                     .fixedSize()
                 Text(verbatim: "iki valgio").foregroundStyle(.secondary)
             }
-            .font(.title3)
+            .font(size == .row ? .footnote : .title3)
         }
     }
 }

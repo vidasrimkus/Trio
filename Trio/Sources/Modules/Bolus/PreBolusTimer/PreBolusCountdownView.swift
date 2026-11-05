@@ -45,7 +45,8 @@ struct PreBolusCountdownView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                .font(.title3)
+                .font(.callout.weight(.semibold)) // buttons: fits 375 pt with the timer
+                .lineLimit(1)
                 .padding(.horizontal, 16)
             }
             .frame(height: Self.height)
