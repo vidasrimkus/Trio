@@ -349,6 +349,7 @@
 		41740E936552456AAC0EDBC3 /* DosingModeMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */; };
 		F952E47E415A8EC860E7562B /* RemoteDosingModeCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */; };
 		28385A10737ED113B3E17ED4 /* RemoteBasalScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */; };
+		949B6A2C3B819551329F6B50 /* RemoteTherapyScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA31C4870768A16BE838CBB0 /* RemoteTherapyScheduleTests.swift */; };
 		A1D05A1E0000000000000027 /* LogShipperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D05A1E0000000000000017 /* LogShipperTests.swift */; };
 		B0B05E1A0000000000000026 /* PreBolusPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B05E1A0000000000000016 /* PreBolusPlannerTests.swift */; };
 		B0B05E1A0000000000000027 /* PreBolusNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B05E1A0000000000000017 /* PreBolusNotifierTests.swift */; };
@@ -806,6 +807,9 @@
 		D815E58D8E031D58F328770F /* TrioRemoteControl+DosingMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */; };
 		B6C396DF469F6812B39248F8 /* RemoteBasalSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */; };
 		F716A8B377D59097FBF96552 /* TrioRemoteControl+BasalSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */; };
+		828A96A95FB9DABCB9BC95F1 /* RemoteTherapySchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 013E30A59A50D8344C577820 /* RemoteTherapySchedule.swift */; };
+		98BF73B1ACDFEB2DE454A6BC /* TrioRemoteControl+CarbRatios.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2692E2B06685B5C85A0930 /* TrioRemoteControl+CarbRatios.swift */; };
+		0D2033731D4C3C8796B83007 /* TrioRemoteControl+ISF.swift in Sources */ = {isa = PBXBuildFile; fileRef = C582114781074293364D39C1 /* TrioRemoteControl+ISF.swift */; };
 		A1D05A1E0000000000000021 /* LogShipper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D05A1E0000000000000011 /* LogShipper.swift */; };
 		A1D05A1E0000000000000022 /* LogTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D05A1E0000000000000012 /* LogTailReader.swift */; };
 		A1D05A1E0000000000000023 /* LogRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D05A1E0000000000000013 /* LogRedactor.swift */; };
@@ -1546,6 +1550,7 @@
 		B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DosingModeMigrationTests.swift; sourceTree = "<group>"; };
 		55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteDosingModeCommandTests.swift; sourceTree = "<group>"; };
 		FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteBasalScheduleTests.swift; sourceTree = "<group>"; };
+		CA31C4870768A16BE838CBB0 /* RemoteTherapyScheduleTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteTherapyScheduleTests.swift; sourceTree = "<group>"; };
 		A1D05A1E0000000000000017 /* LogShipperTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LogShipperTests.swift; sourceTree = "<group>"; };
 		B0B05E1A0000000000000016 /* PreBolusPlannerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreBolusPlannerTests.swift; sourceTree = "<group>"; };
 		B0B05E1A0000000000000017 /* PreBolusNotifierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreBolusNotifierTests.swift; sourceTree = "<group>"; };
@@ -1918,6 +1923,9 @@
 		AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+DosingMode.swift"; sourceTree = "<group>"; };
 		3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteBasalSchedule.swift; sourceTree = "<group>"; };
 		DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+BasalSchedule.swift"; sourceTree = "<group>"; };
+		013E30A59A50D8344C577820 /* RemoteTherapySchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTherapySchedule.swift; sourceTree = "<group>"; };
+		FA2692E2B06685B5C85A0930 /* TrioRemoteControl+CarbRatios.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+CarbRatios.swift"; sourceTree = "<group>"; };
+		C582114781074293364D39C1 /* TrioRemoteControl+ISF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrioRemoteControl+ISF.swift"; sourceTree = "<group>"; };
 		A1D05A1E0000000000000011 /* LogShipper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogShipper.swift; sourceTree = "<group>"; };
 		A1D05A1E0000000000000012 /* LogTailReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTailReader.swift; sourceTree = "<group>"; };
 		A1D05A1E0000000000000013 /* LogRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogRedactor.swift; sourceTree = "<group>"; };
@@ -3285,6 +3293,7 @@
 				B3919BBB515547118D684CB2 /* DosingModeMigrationTests.swift */,
 				55A8B413346A3F015AEE95CD /* RemoteDosingModeCommandTests.swift */,
 				FB020CE207114E0E2CBC65F2 /* RemoteBasalScheduleTests.swift */,
+				CA31C4870768A16BE838CBB0 /* RemoteTherapyScheduleTests.swift */,
 				A1D05A1E0000000000000017 /* LogShipperTests.swift */,
 				B0B05E1A0000000000000016 /* PreBolusPlannerTests.swift */,
 				B0B05E1A0000000000000017 /* PreBolusNotifierTests.swift */,
@@ -4549,6 +4558,9 @@
 				AD13AFCF09C352220AA77F20 /* TrioRemoteControl+DosingMode.swift */,
 				3B880F53BB926C2513E42792 /* RemoteBasalSchedule.swift */,
 				DCB26B79C5ED15BFDCD3EEDA /* TrioRemoteControl+BasalSchedule.swift */,
+				013E30A59A50D8344C577820 /* RemoteTherapySchedule.swift */,
+				FA2692E2B06685B5C85A0930 /* TrioRemoteControl+CarbRatios.swift */,
+				C582114781074293364D39C1 /* TrioRemoteControl+ISF.swift */,
 				DD32CF9B2CC82495003686D6 /* TrioRemoteControl+TempTarget.swift */,
 				DD32CF992CC8246F003686D6 /* TrioRemoteControl+Meal.swift */,
 				DD32CF972CC82460003686D6 /* TrioRemoteControl+Bolus.swift */,
@@ -5899,6 +5911,9 @@
 				D815E58D8E031D58F328770F /* TrioRemoteControl+DosingMode.swift in Sources */,
 				B6C396DF469F6812B39248F8 /* RemoteBasalSchedule.swift in Sources */,
 				F716A8B377D59097FBF96552 /* TrioRemoteControl+BasalSchedule.swift in Sources */,
+				828A96A95FB9DABCB9BC95F1 /* RemoteTherapySchedule.swift in Sources */,
+				98BF73B1ACDFEB2DE454A6BC /* TrioRemoteControl+CarbRatios.swift in Sources */,
+				0D2033731D4C3C8796B83007 /* TrioRemoteControl+ISF.swift in Sources */,
 				A1D05A1E0000000000000021 /* LogShipper.swift in Sources */,
 				B0B05E1A0000000000000021 /* PreBolusConstants.swift in Sources */,
 				B0B05E1A0000000000000022 /* PreBolusPlanner.swift in Sources */,
@@ -6153,6 +6168,7 @@
 				41740E936552456AAC0EDBC3 /* DosingModeMigrationTests.swift in Sources */,
 				F952E47E415A8EC860E7562B /* RemoteDosingModeCommandTests.swift in Sources */,
 				28385A10737ED113B3E17ED4 /* RemoteBasalScheduleTests.swift in Sources */,
+				949B6A2C3B819551329F6B50 /* RemoteTherapyScheduleTests.swift in Sources */,
 				A1D05A1E0000000000000027 /* LogShipperTests.swift in Sources */,
 				B0B05E1A0000000000000026 /* PreBolusPlannerTests.swift in Sources */,
 				B0B05E1A0000000000000027 /* PreBolusNotifierTests.swift in Sources */,
