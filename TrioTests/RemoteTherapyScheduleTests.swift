@@ -444,9 +444,14 @@ import Testing
     }
 
     @Test("Nightscout form of 90 mg/dL: 5.0 in mmol/L (4.995 → 5.0), 90 in mg/dL") func nightscoutForm() {
-        // The exchange rate must be exactly 0.0555 so half-up boundaries match LoopFollow (90 → 4.995, 100 → 5.55).
-        #expect(GlucoseUnits.exchangeRate == Decimal(string: "0.0555")!)
-        #expect(Decimal(90) * GlucoseUnits.exchangeRate == Decimal(string: "4.995")!)
+        // GlucoseUnits.exchangeRate is a Decimal built from a float literal (0.05550000000000001024, seen in CI), not
+        // exactly 0.0555. The excess is positive and tiny, so half-up results equal exact 0.0555 arithmetic (what
+        // LoopFollow uses: tenths = (mg × 555 + 500) / 1000) for every mg/dL value the ISF accepts.
+        for mgdl in 9 ... 540 {
+            let exactTenths = Decimal((mgdl * 555 + 500) / 1000)
+            let trio = R.nightscoutSensitivity(Decimal(mgdl), units: .mmolL)
+            #expect(trio * 10 == exactTenths, "\(mgdl) mg/dL")
+        }
         #expect(R.nightscoutSensitivity(100, units: .mmolL) == Decimal(string: "5.6")!)
         #expect(R.nightscoutSensitivity(90, units: .mmolL) == Decimal(string: "5.0")!)
         #expect(R.nightscoutSensitivity(90, units: .mgdL) == 90)
