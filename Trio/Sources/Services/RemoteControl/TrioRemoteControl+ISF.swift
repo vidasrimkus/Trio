@@ -1,43 +1,82 @@
 import Foundation
+import UserNotifications
 
 extension TrioRemoteControl {
-    /// `set_isf`: replace Trio's insulin sensitivity schedule (always sent and stored in mg/dL). Rules and checks live
-    /// in RemoteTherapySchedule; the save and its follow-ups are the ISF editor's own (ISFEditor.StateModel.save()).
-    /// Nothing goes to the pump.
     @MainActor func handleSetISFCommand(_ payload: CommandPayload) async {
-        // No APSManager → cannot tell whether a loop runs → treat it as running and refuse (fail closed).
+        let restoring = payload.commandType == .restorePreviousISF
         let aps = TrioApp.resolver.resolve(APSManager.self)
-        // The editor's provider (it also migrates a legacy mmol/L file to mg/dL on read, as opening the editor does).
+        guard let storage = TrioApp.resolver.resolve(FileStorage.self) else {
+            await logError("Command rejected: local storage is unavailable.", payload: payload)
+            return
+        }
         let provider = ISFEditor.Provider(resolver: TrioApp.resolver)
-        // Starts are minutes from midnight in the phone's local time, stored as received (no TimeZone conversion).
-        // The guard hash is of what Nightscout shows, i.e. in the units Trio uploads with right now.
-        let plan = RemoteTherapySchedule.planSensitivities(
-            schedule: payload.isfSchedule,
-            name: payload.scheduleName,
-            expectedHash: payload.expectedActiveHash,
-            looping: aps?.isLooping.value ?? true,
-            units: settings.settings.units,
-            stored: { provider.profile.sensitivities }
-        )
+        // The ISF provider normalizes legacy files before the snapshot is taken.
+        _ = provider.profile
+        let file = OpenAPS.Settings.insulinSensitivities
+        guard let activeRaw = storage.retrieveRaw(file), let onDisk = InsulinSensitivities(from: activeRaw), onDisk.units == .mgdL && onDisk.userPreferredUnits == .mgdL else {
+            await logError("Command rejected: cannot read the active ISF file.", payload: payload)
+            return
+        }
+        let current = onDisk
+        let plan: Result<RemoteTherapySchedule.Plan<InsulinSensitivityEntry>, RemoteTherapySchedule.Rejection>
+        var restoredRaw: String?
+        if restoring {
+            let activeHash = RemoteTherapySchedule.sensitivityNightscoutHash(current.sensitivities, units: settings.settings.units)
+            let raw: String
+            switch RemoteTherapyBackup.restoreRaw(
+                file: file, storage: storage, expectedHash: payload.expectedActiveHash,
+                activeHash: activeHash, looping: aps?.isLooping.value ?? true
+            ) {
+            case let .failure(rejection):
+                await logError(rejection.text, payload: payload)
+                return
+            case let .success(value): raw = value
+            }
+            guard let previous = InsulinSensitivities(from: raw), previous.units == .mgdL && previous.userPreferredUnits == .mgdL else {
+                await logError("Command rejected: previous backup has invalid units or data.", payload: payload)
+                return
+            }
+            let newHash = RemoteTherapySchedule.sensitivityNightscoutHash(previous.sensitivities, units: settings.settings.units)
+            // An identical raw file means a retry of an already completed restore. No toggle.
+            if storage.retrieveRaw(file) == raw {
+                await logSuccess("Already restored ISF.", payload: payload, customNotificationMessage: "ISF jau atkurtas", activeHash: newHash)
+                return
+            }
+            restoredRaw = raw
+            // Only this verified on-phone snapshot bypasses the percentage/editor-grid guards.
+            plan = .success(.write(name: "Previous ISF", entries: previous.sensitivities, activeHash: activeHash, newHash: newHash))
+        } else {
+            plan = RemoteTherapySchedule.planSensitivities(
+                schedule: payload.isfSchedule, name: payload.scheduleName,
+                expectedHash: payload.expectedActiveHash, looping: aps?.isLooping.value ?? true,
+                units: settings.settings.units, stored: { current.sensitivities }
+            )
+        }
 
         switch plan {
         case let .failure(rejection):
             await logError(rejection.text, payload: payload)
-            return
-        case let .success(.alreadyActive(activeName, hash)):
-            await logSuccess(
-                "Remote command processed successfully. ISF \"\(activeName)\" is already active (\(hash)).",
-                payload: payload,
-                customNotificationMessage: "Already active: \(activeName)"
-            )
-            return
+        case let .success(.alreadyActive(name, hash)):
+            await logSuccess("Already active: \(name)", payload: payload, customNotificationMessage: "Already active: \(name)", activeHash: hash)
         case let .success(.write(name, entries, activeHash, newHash)):
-            // Same save and follow-up as ISFEditor.StateModel.save(): the file is always mg/dL.
-            let profile = RemoteTherapySchedule.sensitivityProfile(entries)
-            provider.saveProfile(profile)
-
+            let raw = restoredRaw ?? RemoteTherapySchedule.sensitivityProfile(entries).rawJSON
+            guard RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: !restoring, expectedRaw: activeRaw),
+                  let saved = InsulinSensitivities(from: raw)
+            else {
+                await logError("Command rejected: ISF backup or file write could not be verified. Check Trio on the child's phone.", payload: payload)
+                return
+            }
+            let summary = RemoteTherapySchedule.changeSummary(
+                old: RemoteTherapySchedule.sensitivitySlots(current.sensitivities), new: RemoteTherapySchedule.sensitivitySlots(saved.sensitivities)
+            )
             let broadcaster = TrioApp.resolver.resolve(Broadcaster.self)
-            broadcaster?.notify(InsulinSensitivitiesObserver.self, on: .main) { $0.insulinSensitivitiesDidChange(profile) }
+            broadcaster?.notify(InsulinSensitivitiesObserver.self, on: .main) { $0.insulinSensitivitiesDidChange(saved) }
+            let notification = RemoteTherapyBackup.notification(label: "ISF", restored: restoring, summary: summary)
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "Trio.remoteTherapy." + UUID().uuidString, content: notification, trigger: nil)
+            ) { failure in
+                if let failure { debug(.remoteControl, "ISF notification failed: \(failure)") }
+            }
             let nightscout = nightscoutManager
             Task.detached(priority: .low) {
                 do { try await nightscout?.uploadProfiles() } catch {
@@ -47,12 +86,13 @@ extension TrioRemoteControl {
             if let tidepool = TrioApp.resolver.resolve(TidepoolManager.self) {
                 Task.detached(priority: .low) { await tidepool.uploadSettings() }
             }
-            await nightscoutManager.uploadNoteTreatment(note: "ISF activated remotely: \(name) (\(newHash))")
-
+            // Notify the sender before network-dependent Note upload; success means the local file was verified.
             await logSuccess(
-                "Remote command processed successfully. ISF \"\(name)\" activated (\(activeHash) → \(newHash)).",
-                payload: payload,
-                customNotificationMessage: "ISF activated: \(name)"
+                "ISF: \(activeHash) → \(newHash)", payload: payload,
+                customNotificationMessage: "ISF \(restoring ? "atkurtas" : "pritaikytas"): \(name)", activeHash: newHash
+            )
+            await nightscoutManager.uploadNoteTreatment(
+                note: "ISF \(restoring ? "restored" : "activated") remotely: \(name) (\(newHash)). \(summary)"
             )
         }
     }

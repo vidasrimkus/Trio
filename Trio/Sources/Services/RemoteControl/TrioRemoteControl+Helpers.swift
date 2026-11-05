@@ -11,7 +11,8 @@ extension TrioRemoteControl {
                     to: returnInfo,
                     commandType: payload.commandType,
                     success: false,
-                    message: errorMessage
+                    message: errorMessage,
+                    commandID: payload.commandID
                 )
             }
         }
@@ -19,7 +20,7 @@ extension TrioRemoteControl {
         await nightscoutManager.uploadNoteTreatment(note: note)
     }
 
-    func logSuccess(_ message: String, payload: CommandPayload, customNotificationMessage: String? = nil) async {
+    func logSuccess(_ message: String, payload: CommandPayload, customNotificationMessage: String? = nil, activeHash: String? = nil) async {
         debug(.remoteControl, message)
 
         if let returnInfo = payload.returnNotification {
@@ -27,7 +28,9 @@ extension TrioRemoteControl {
                 to: returnInfo,
                 commandType: payload.commandType,
                 success: true,
-                message: customNotificationMessage ?? "Command successful"
+                message: customNotificationMessage ?? "Command successful",
+                commandID: payload.commandID,
+                activeHash: activeHash
             )
         }
     }

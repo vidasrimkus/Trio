@@ -514,3 +514,39 @@ and later viewed after switching Trio to mmol/L shows the closest editor value; 
 rewrites it (≤ 1 mg/dL, same mmol/L on screen) — upstream editor behaviour.
 
 Deferred review findings: `docs/cr-isf-todo.md`.
+
+
+## 12. Remote CR/ISF safety (branch `feat/remote-therapy-safety`, not merged)
+
+This section supersedes §11 where behavior differs. No algorithm, basal or pump-driver changes.
+- `set_carb_ratios` / `set_isf` compare all 48 half-hour slots against the exact active on-phone values.
+  `abs(new-old)*100 > old*20` rejects the entire command, reporting the time, old/new values, units and percentage.
+  Exactly ±20% is allowed. ISF is compared in exact mg/dL even when the UI uses mmol/L. Missing/invalid active
+  values fail closed. The unchanged/already-active and expected-hash guards remain.
+- Before a write, `RemoteTherapyBackup` stores the full original UTF-8 profile, timestamp and full SHA-256 in
+  `<profile filename>.remote-previous.json`. Both snapshot and target writes are read back and verified; failure
+  does not report success. Original segmentation, units and Decimal text are preserved, not reconstructed from NS.
+- `restore_previous_carb_ratios` / `restore_previous_isf` accept ONLY `expected_active_hash` (and common metadata).
+  The target comes exclusively from the verified backup on Trio. Missing/corrupt backup, stale hash or a running
+  loop rejects. Restore bypasses the ±20% and mmol/L picker restrictions so it can restore the exact original.
+  Restore leaves the backup intact; an identical restored file is an idempotent no-op. Next successful set replaces
+  the previous snapshot. This is a single undo level, not history. Manual edits do not create these snapshots.
+- After a verified write/restore: existing observers, NS profile upload and Tidepool follow-ups; NS Note with the
+  action and change list. A local noncritical, silent notification names CR/ISF, changed Trio-local times and old/new
+  values (ISF mg/dL). Foreground presentation omits sound for this category. Notification delivery still needs iOS
+  permission; NS upload remains network-dependent and is not proof of local application. Telegram is external work.
+- LoopFollow adds optional UUID `command_id` to the four therapy commands. Trio echoes `command_id`,
+  `command_type`, `command_status` (`success` / `failed`) and the human reason in the return push. `aps` includes
+  `content-available: 1` for delivery to the receiving app. Success is sent after local write verification, before
+  waiting for the NS Note. Other clients without UUIDs retain their notification-only behavior.
+- LoopFollow must deploy the matching correlation/status and restore implementation. t1d-monitor needs no change
+  for these commands. Nightscout-form hashes remain intentionally lossy in mmol/L; exact remote hashes deferred.
+- Tests: `RemoteTherapyScheduleTests.exactChangeBoundary`, `crPlanChangeLimit`, `isfPlanChangeLimit`, `movedBoundary`;
+  `RemoteTherapyBackupTests.exactRoundTrip`, `restoreGuards`, `missingSource`, `notificationContent`,
+  `commandAndResponse`. Existing time-zone, units and rejection tests remain. Recovery raw-byte equality is tested
+  with redundant segments and a 47 mg/dL ISF value that the mmol/L editor would otherwise snap.
+
+Correlated success also returns `active_hash` in the existing Nightscout form. LoopFollow uses it for exact-backup
+restore confirmation so an immediate undo does not wait for Nightscout profile upload. Trio still checks this
+hash against its current schedule; manual changes or unit switches can reject a stale confirmation. This is
+not the deferred exact remote hash protocol.

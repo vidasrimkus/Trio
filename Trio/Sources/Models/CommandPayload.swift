@@ -11,6 +11,7 @@ struct EncryptedPushMessage: Decodable {
 struct CommandPayload: Decodable, Sendable {
     var user: String
     var commandType: TrioRemoteControl.CommandType
+    var commandID: UUID?
     var timestamp: TimeInterval
     var bolusAmount: Decimal?
     var target: Int?
@@ -59,6 +60,7 @@ struct CommandPayload: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case user
         case timestamp
+        case commandID = "command_id"
         case target
         case duration
         case carbs
@@ -121,6 +123,10 @@ struct CommandPayload: Decodable, Sendable {
             description += "Basal Schedule: \(basalScheduleName ?? "unnamed"), \(basalSchedule?.count ?? 0) segments."
         case .setCarbRatios:
             description += "Carb Ratios: \(scheduleName ?? "unnamed"), \(carbRatioSchedule?.count ?? 0) entries."
+        case .restorePreviousCarbRatios:
+            description += "Restore previous carb ratios stored on Trio."
+        case .restorePreviousISF:
+            description += "Restore previous ISF stored on Trio."
         case .setISF:
             description += "ISF: \(scheduleName ?? "unnamed"), \(isfSchedule?.count ?? 0) entries."
         }
@@ -150,6 +156,8 @@ extension TrioRemoteControl {
         case setBasalSchedule = "set_basal_schedule"
         case setCarbRatios = "set_carb_ratios"
         case setISF = "set_isf"
+        case restorePreviousCarbRatios = "restore_previous_carb_ratios"
+        case restorePreviousISF = "restore_previous_isf"
 
         var description: String {
             switch self {
@@ -171,6 +179,8 @@ extension TrioRemoteControl {
                 return "Set Basal Schedule"
             case .setCarbRatios:
                 return "Set Carb Ratios"
+            case .restorePreviousCarbRatios: return "Restore Previous Carb Ratios"
+            case .restorePreviousISF: return "Restore Previous ISF"
             case .setISF:
                 return "Set ISF"
             }

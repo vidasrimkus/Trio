@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UserNotifications
 
 /// Pure rules for the remote `set_carb_ratios` and `set_isf` commands: validation, the 48 half-hour slots, the
 /// shared hashes and the pre-check. No storage access here, so every rule is unit-tested. Contract and vectors:
@@ -76,6 +77,9 @@ enum RemoteTherapySchedule {
                 "the active carb ratios changed since they were read (expected \(expectedHash), active \(activeHash)). Refresh and try again."
             ))
         }
+        if let rejection = changeRejection(old: carbRatioSlots(current), new: carbRatioSlots(entries), label: "CR", unit: "g/U") {
+            return .failure(rejected(rejection.text))
+        }
         return .success(.write(name: name, entries: entries, activeHash: activeHash, newHash: newHash))
     }
 
@@ -111,7 +115,35 @@ enum RemoteTherapySchedule {
                 "the active ISF changed since it was read (expected \(expectedHash), active \(activeHash)). Refresh and try again."
             ))
         }
+        if let rejection = changeRejection(old: sensitivitySlots(current), new: sensitivitySlots(entries), label: "ISF", unit: "mg/dL") {
+            return .failure(rejected(rejection.text))
+        }
         return .success(.write(name: name, entries: entries, activeHash: activeHash, newHash: newHash))
+    }
+
+    /// Exact Decimal comparison on all 48 slots; no display rounding, including in mmol/L mode.
+    static func changeRejection(old: [Decimal], new: [Decimal], label: String, unit: String) -> Rejection? {
+        guard old.count == 48, new.count == 48, old.allSatisfy({ $0 > 0 && !$0.isNaN }) else {
+            return .message("Cannot verify the active schedule. Check Trio on the child's phone.")
+        }
+        for (slot, pair) in zip(old, new).enumerated() {
+            let (before, after) = pair
+            if abs(after - before) * 100 > before * 20 {
+                let percent = Trio.rounded((after - before) * 100 / before, scale: 2, roundingMode: .plain)
+                return .message("\(label) \(storageStart(slot * 30).prefix(5)): \(before) → \(after) \(unit) (\(percent)%). Maksimalus pokytis vienu kartu yra ±20 %.")
+            }
+        }
+        return nil
+    }
+
+    static func changeSummary(old: [Decimal], new: [Decimal]) -> String {
+        guard old.count == 48, new.count == 48 else { return "Grafikas atkurtas." }
+        var lines: [String] = []
+        for slot in 0 ..< 48 where old[slot] != new[slot] {
+            if slot > 0, old[slot] == old[slot - 1], new[slot] == new[slot - 1] { continue }
+            lines.append("\(storageStart(slot * 30).prefix(5)) \(old[slot]) → \(new[slot])")
+        }
+        return lines.joined(separator: "; ")
     }
 
     // MARK: - mmol/L editor values
@@ -318,5 +350,67 @@ enum RemoteTherapySchedule {
 
     private static func hashOf(canonical: String) -> String {
         SHA256.hash(data: Data(canonical.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Keeps the complete original file, including entry boundaries, units and Decimal text.
+/// Restore never replaces this snapshot, so retrying restore cannot toggle back to the changed schedule.
+struct RemoteTherapyBackup: JSON {
+    let rawProfile: String
+    let savedAt: Date
+    let exactHash: String
+
+    init(rawProfile: String, savedAt: Date = Date()) {
+        self.rawProfile = rawProfile
+        self.savedAt = savedAt
+        exactHash = Self.hash(rawProfile)
+    }
+
+    var isValid: Bool { exactHash == Self.hash(rawProfile) }
+
+    static func hash(_ raw: String) -> String {
+        SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func filename(_ profileFile: String) -> String { profileFile + ".remote-previous.json" }
+
+    static func restoreRaw(file: String, storage: FileStorage, expectedHash: String?, activeHash: String, looping: Bool) -> Result<String, RemoteTherapySchedule.Rejection> {
+        guard let expectedHash else { return .failure(.message("Command rejected: expected_active_hash is required.")) }
+        if let rejection = RemoteTherapySchedule.precheck(looping: looping) { return .failure(rejection) }
+        guard let backup = storage.retrieve(filename(file), as: RemoteTherapyBackup.self), backup.isValid else {
+            return .failure(.message("Command rejected: no valid exact previous backup on Trio."))
+        }
+        if storage.retrieveRaw(file) != backup.rawProfile, expectedHash != activeHash {
+            return .failure(.message("Command rejected: the active schedule changed since it was read. Refresh and try again."))
+        }
+        return .success(backup.rawProfile)
+    }
+
+    /// Read-back verification is required: FileStorage.save itself does not throw on disk errors.
+    static func replace(_ raw: String, file: String, storage: FileStorage, preservePrevious: Bool, expectedRaw: String? = nil) -> Bool {
+        var succeeded = false
+        storage.transaction { storage in
+            guard let before = storage.retrieveRaw(file), expectedRaw == nil || before == expectedRaw else { return }
+            if preservePrevious {
+                let snapshot = RemoteTherapyBackup(rawProfile: before)
+                let name = filename(file)
+                storage.save(snapshot, as: name)
+                guard let saved = storage.retrieve(name, as: RemoteTherapyBackup.self),
+                      saved.isValid, saved.rawProfile == before else { return }
+            }
+            storage.save(raw, as: file)
+            succeeded = storage.retrieveRaw(file) == raw
+        }
+        return succeeded
+    }
+
+    static func notification(label: String, restored: Bool, summary: String) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = "\(label) \(restored ? "atkurtas" : "pakeistas") iš LoopFollow"
+        content.body = summary + (label == "ISF" ? " (mg/dL; Trio telefono laikas)" : " (g/U; Trio telefono laikas)")
+        content.sound = nil
+        content.interruptionLevel = .active
+        content.userInfo = ["remote_therapy_change": true]
+        return content
     }
 }

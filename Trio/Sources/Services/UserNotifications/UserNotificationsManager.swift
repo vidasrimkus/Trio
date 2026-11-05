@@ -215,6 +215,10 @@ extension BaseUserNotificationsManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         let userInfo = notification.request.content.userInfo
+        if userInfo["remote_therapy_change"] as? Bool == true {
+            completionHandler([.banner, .list])
+            return
+        }
         if userInfo[AlertUserInfoKey.managerIdentifier.rawValue] is String {
             completionHandler([.badge, .list])
             return
