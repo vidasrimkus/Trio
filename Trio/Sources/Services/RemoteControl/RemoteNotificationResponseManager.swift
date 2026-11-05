@@ -10,6 +10,7 @@ class RemoteNotificationResponseManager {
         let commandStatus: String
         let commandType: String
         var commandID: UUID?
+        var activeHash: String?
         let timestamp: TimeInterval
 
         enum CodingKeys: String, CodingKey {
@@ -18,6 +19,7 @@ class RemoteNotificationResponseManager {
             case commandType = "command_type"
             case timestamp
             case commandID = "command_id"
+            case activeHash = "active_hash"
         }
     }
 
@@ -42,7 +44,8 @@ class RemoteNotificationResponseManager {
         commandType: TrioRemoteControl.CommandType,
         success: Bool,
         message: String,
-        commandID: UUID? = nil
+        commandID: UUID? = nil,
+        activeHash: String? = nil
     ) async {
         guard let returnInfo = returnInfo,
               !returnInfo.deviceToken.isEmpty
@@ -61,6 +64,7 @@ class RemoteNotificationResponseManager {
             commandStatus: success ? "success" : "failed",
             commandType: commandType.rawValue,
             commandID: commandID,
+            activeHash: activeHash,
             timestamp: Date().timeIntervalSince1970
         )
 

@@ -545,3 +545,8 @@ This section supersedes §11 where behavior differs. No algorithm, basal or pump
   `RemoteTherapyBackupTests.exactRoundTrip`, `restoreGuards`, `missingSource`, `notificationContent`,
   `commandAndResponse`. Existing time-zone, units and rejection tests remain. Recovery raw-byte equality is tested
   with redundant segments and a 47 mg/dL ISF value that the mmol/L editor would otherwise snap.
+
+Correlated success also returns `active_hash` in the existing Nightscout form. LoopFollow uses it for exact-backup
+restore confirmation so an immediate undo does not wait for Nightscout profile upload. Trio still checks this
+hash against its current schedule; manual changes or unit switches can reject a stale confirmation. This is
+not the deferred exact remote hash protocol.

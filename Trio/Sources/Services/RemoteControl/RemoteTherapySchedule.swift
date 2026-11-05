@@ -387,10 +387,10 @@ struct RemoteTherapyBackup: JSON {
     }
 
     /// Read-back verification is required: FileStorage.save itself does not throw on disk errors.
-    static func replace(_ raw: String, file: String, storage: FileStorage, preservePrevious: Bool) -> Bool {
+    static func replace(_ raw: String, file: String, storage: FileStorage, preservePrevious: Bool, expectedRaw: String? = nil) -> Bool {
         var succeeded = false
         storage.transaction { storage in
-            guard let before = storage.retrieveRaw(file) else { return }
+            guard let before = storage.retrieveRaw(file), expectedRaw == nil || before == expectedRaw else { return }
             if preservePrevious {
                 let snapshot = RemoteTherapyBackup(rawProfile: before)
                 let name = filename(file)

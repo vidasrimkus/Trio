@@ -11,12 +11,13 @@ extension TrioRemoteControl {
         }
         let provider = CarbRatioEditor.Provider(resolver: TrioApp.resolver)
         // The ISF provider normalizes legacy files before the snapshot is taken.
-        let current = provider.profile
+        _ = provider.profile
         let file = OpenAPS.Settings.carbRatios
-        guard storage.retrieveRaw(file) != nil else {
+        guard let activeRaw = storage.retrieveRaw(file), let onDisk = CarbRatios(from: activeRaw), onDisk.units == .grams else {
             await logError("Command rejected: cannot read the active CR file.", payload: payload)
             return
         }
+        let current = onDisk
         let plan: Result<RemoteTherapySchedule.Plan<CarbRatioEntry>, RemoteTherapySchedule.Rejection>
         var restoredRaw: String?
         if restoring {
@@ -38,7 +39,7 @@ extension TrioRemoteControl {
             let newHash = RemoteTherapySchedule.carbRatioHash(previous.schedule)
             // An identical raw file means a retry of an already completed restore. No toggle.
             if storage.retrieveRaw(file) == raw {
-                await logSuccess("Already restored CR.", payload: payload, customNotificationMessage: "CR jau atkurtas")
+                await logSuccess("Already restored CR.", payload: payload, customNotificationMessage: "CR jau atkurtas", activeHash: newHash)
                 return
             }
             restoredRaw = raw
@@ -55,11 +56,11 @@ extension TrioRemoteControl {
         switch plan {
         case let .failure(rejection):
             await logError(rejection.text, payload: payload)
-        case let .success(.alreadyActive(name, _)):
-            await logSuccess("Already active: \(name)", payload: payload, customNotificationMessage: "Already active: \(name)")
+        case let .success(.alreadyActive(name, hash)):
+            await logSuccess("Already active: \(name)", payload: payload, customNotificationMessage: "Already active: \(name)", activeHash: hash)
         case let .success(.write(name, entries, activeHash, newHash)):
             let raw = restoredRaw ?? CarbRatios(units: .grams, schedule: entries).rawJSON
-            guard RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: !restoring),
+            guard RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: !restoring, expectedRaw: activeRaw),
                   let saved = CarbRatios(from: raw)
             else {
                 await logError("Command rejected: CR backup or file write could not be verified. Check Trio on the child's phone.", payload: payload)
@@ -88,7 +89,7 @@ extension TrioRemoteControl {
             // Notify the sender before network-dependent Note upload; success means the local file was verified.
             await logSuccess(
                 "CR: \(activeHash) → \(newHash)", payload: payload,
-                customNotificationMessage: "CR \(restoring ? "atkurtas" : "pritaikytas"): \(name)"
+                customNotificationMessage: "CR \(restoring ? "atkurtas" : "pritaikytas"): \(name)", activeHash: newHash
             )
             await nightscoutManager.uploadNoteTreatment(
                 note: "CR \(restoring ? "restored" : "activated") remotely: \(name) (\(newHash)). \(summary)"

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UserNotifications
 @testable import Trio
 
 @Suite("Remote set_carb_ratios / set_isf commands") struct RemoteTherapyScheduleTests {
@@ -599,6 +600,12 @@ import Testing
         #expect(backup.isValid && backup.rawProfile == old)
         #expect(backup.exactHash == RemoteTherapyBackup.hash(old))
         #expect(abs(backup.savedAt.timeIntervalSinceNow) < 30)
+        // Returning from a 20% decrease can exceed +20%; exact undo still succeeds.
+        let currentValue: Decimal = isf ? 38 : 5.6
+        let previousValue: Decimal = isf ? 47 : 7
+        #expect(RemoteTherapySchedule.changeRejection(
+            old: Array(repeating: currentValue, count: 48), new: Array(repeating: previousValue, count: 48), label: "test", unit: "test"
+        ) != nil)
         let raw = try RemoteTherapyBackup.restoreRaw(file: file, storage: storage, expectedHash: "current", activeHash: "current", looping: false).get()
         let restored = RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: false)
         #expect(restored)
@@ -628,6 +635,17 @@ import Testing
         #expect(storage.retrieveRaw(file) == "changed")
     }
 
+    @Test("Concurrent active-file changes are refused inside the storage transaction") func changedSource() {
+        let storage = BaseFileStorage()
+        let file = "remote-therapy-race-" + UUID().uuidString
+        defer { storage.remove(file); storage.remove(RemoteTherapyBackup.filename(file)) }
+        storage.save("manual change", as: file)
+        let saved = RemoteTherapyBackup.replace("new", file: file, storage: storage, preservePrevious: true, expectedRaw: "earlier read")
+        #expect(!saved)
+        #expect(storage.retrieveRaw(file) == "manual change")
+        #expect(storage.retrieve(RemoteTherapyBackup.filename(file), as: RemoteTherapyBackup.self) == nil)
+    }
+
     @Test("Missing active file cannot be overwritten without a verified backup") func missingSource() {
         let storage = BaseFileStorage()
         let file = "remote-therapy-missing-" + UUID().uuidString
@@ -637,10 +655,10 @@ import Testing
     }
 
     @Test("Applied/restore child notification names changes and is silent and noncritical") func notificationContent() {
-        let summary = RemoteTherapySchedule.changeSummary(old: Array(repeating: 7, count: 48), new: Array(repeating: 8, count: 48))
+        let summary = RemoteTherapySchedule.changeSummary(old: Array(repeating: 7, count: 48), new: Array(repeating: 7, count: 20) + Array(repeating: 8, count: 28))
         let content = RemoteTherapyBackup.notification(label: "CR", restored: false, summary: summary)
         #expect(content.title == "CR pakeistas iš LoopFollow")
-        #expect(content.body.contains("00:00 7 → 8"))
+        #expect(content.body.contains("10:00 7 → 8"))
         #expect(content.sound == nil)
         #expect(content.interruptionLevel == .active)
         #expect(RemoteTherapyBackup.notification(label: "ISF", restored: true, summary: "test").title == "ISF atkurtas iš LoopFollow")
@@ -659,10 +677,11 @@ import Testing
         }
         let response = RemoteNotificationResponseManager.NotificationPayload(
             aps: .init(alert: .init(title: "Command Successful", body: "done")),
-            commandStatus: "success", commandType: "set_isf", commandID: id, timestamp: 100
+            commandStatus: "success", commandType: "set_isf", commandID: id, activeHash: "abc", timestamp: 100
         )
         let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(response)) as? [String: Any])
         #expect(json["command_id"] as? String == id.uuidString)
+        #expect(json["active_hash"] as? String == "abc")
         #expect((json["aps"] as? [String: Any])?["content-available"] as? Int == 1)
     }
 }

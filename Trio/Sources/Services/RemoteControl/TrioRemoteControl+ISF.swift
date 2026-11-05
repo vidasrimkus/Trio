@@ -11,12 +11,13 @@ extension TrioRemoteControl {
         }
         let provider = ISFEditor.Provider(resolver: TrioApp.resolver)
         // The ISF provider normalizes legacy files before the snapshot is taken.
-        let current = provider.profile
+        _ = provider.profile
         let file = OpenAPS.Settings.insulinSensitivities
-        guard storage.retrieveRaw(file) != nil else {
+        guard let activeRaw = storage.retrieveRaw(file), let onDisk = InsulinSensitivities(from: activeRaw), onDisk.units == .mgdL && onDisk.userPreferredUnits == .mgdL else {
             await logError("Command rejected: cannot read the active ISF file.", payload: payload)
             return
         }
+        let current = onDisk
         let plan: Result<RemoteTherapySchedule.Plan<InsulinSensitivityEntry>, RemoteTherapySchedule.Rejection>
         var restoredRaw: String?
         if restoring {
@@ -38,7 +39,7 @@ extension TrioRemoteControl {
             let newHash = RemoteTherapySchedule.sensitivityNightscoutHash(previous.sensitivities, units: settings.settings.units)
             // An identical raw file means a retry of an already completed restore. No toggle.
             if storage.retrieveRaw(file) == raw {
-                await logSuccess("Already restored ISF.", payload: payload, customNotificationMessage: "ISF jau atkurtas")
+                await logSuccess("Already restored ISF.", payload: payload, customNotificationMessage: "ISF jau atkurtas", activeHash: newHash)
                 return
             }
             restoredRaw = raw
@@ -55,11 +56,11 @@ extension TrioRemoteControl {
         switch plan {
         case let .failure(rejection):
             await logError(rejection.text, payload: payload)
-        case let .success(.alreadyActive(name, _)):
-            await logSuccess("Already active: \(name)", payload: payload, customNotificationMessage: "Already active: \(name)")
+        case let .success(.alreadyActive(name, hash)):
+            await logSuccess("Already active: \(name)", payload: payload, customNotificationMessage: "Already active: \(name)", activeHash: hash)
         case let .success(.write(name, entries, activeHash, newHash)):
             let raw = restoredRaw ?? RemoteTherapySchedule.sensitivityProfile(entries).rawJSON
-            guard RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: !restoring),
+            guard RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: !restoring, expectedRaw: activeRaw),
                   let saved = InsulinSensitivities(from: raw)
             else {
                 await logError("Command rejected: ISF backup or file write could not be verified. Check Trio on the child's phone.", payload: payload)
@@ -88,7 +89,7 @@ extension TrioRemoteControl {
             // Notify the sender before network-dependent Note upload; success means the local file was verified.
             await logSuccess(
                 "ISF: \(activeHash) → \(newHash)", payload: payload,
-                customNotificationMessage: "ISF \(restoring ? "atkurtas" : "pritaikytas"): \(name)"
+                customNotificationMessage: "ISF \(restoring ? "atkurtas" : "pritaikytas"): \(name)", activeHash: newHash
             )
             await nightscoutManager.uploadNoteTreatment(
                 note: "ISF \(restoring ? "restored" : "activated") remotely: \(name) (\(newHash)). \(summary)"
