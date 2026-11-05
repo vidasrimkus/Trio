@@ -87,7 +87,7 @@ Runner variance is large (restore 54 vs 108 s, build 222 vs 332 s between two wa
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
 | LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
-| LoopFollow → Trio (branch `feat/remote-cr-isf-v2`, not on main yet) | `command_type: "set_carb_ratios"` with `carb_ratio_schedule` = `[{"start":"HH:MM","ratio":<g/U>}]`, `command_type: "set_isf"` with `isf_schedule` = `[{"start":"HH:MM","sensitivity":<integer mg/dL>}]`; both with `schedule_name` and `expected_active_hash` (§11). Result: return notification "Carb ratios activated: X" / "ISF activated: X", "Already active: X", or the error (not parsed). Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Carb ratios activated remotely: X (<hash>)" / "ISF activated remotely: X (<hash>)". |
+| LoopFollow → Trio (branch `feat/remote-cr-isf`, not on main yet) | `command_type: "set_carb_ratios"` with `carb_ratio_schedule` = `[{"start":"HH:MM","ratio":<g/U>}]`, `command_type: "set_isf"` with `isf_schedule` = `[{"start":"HH:MM","sensitivity":<integer mg/dL>}]`; both with `schedule_name` and `expected_active_hash` (§11). Result: return notification "Carb ratios activated: X" / "ISF activated: X", "Already active: X", or the error (not parsed). Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Carb ratios activated remotely: X (<hash>)" / "ISF activated remotely: X (<hash>)". |
 | Trio → t1d-monitor (branch `feature/log-shipper`) | `POST /api/logs`, Bearer token, raw-DEFLATE JSON with the new bytes of `logs/log.txt` and `danakit/dana_log.txt`; response `{"accepted":[…]}`. Full contract in `docs/log-ingest-spec.md` (§8). |
 | Trio → Nightscout → t1d-monitor (branch `feature/log-shipper`) | Notes `[trio-event v1] bolus_deleted …`, `bolus_failed …`, `pump_error …` (grammar in `docs/log-ingest-spec.md` §6.1). The same line is written to Trio's log. |
 
@@ -422,7 +422,7 @@ Stage 2 (not built):
   (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity
   (754d441c5), so a high rebase cost.
 
-## 11. Remote commands `set_carb_ratios` and `set_isf` (branch `feat/remote-cr-isf-v2`)
+## 11. Remote commands `set_carb_ratios` and `set_isf` (branch `feat/remote-cr-isf`)
 
 **Purpose.** Replace Trio's carb ratio or ISF schedule from LoopFollow (two separate commands and screens; named
 profiles live in LoopFollow). CR/ISF are Trio-only files (`OpenAPS.Settings.carbRatios`,
