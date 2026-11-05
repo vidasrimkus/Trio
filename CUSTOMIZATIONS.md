@@ -415,7 +415,8 @@ small overlay):
 
 Stage 2 (not built):
 - ~~Food type from the carb entry's note field~~ — done differently: the food-type picker on the bolus row.
-- Live Activity countdown: needs a field in the shared `ContentState` (`LiveActivityAttributes.swift` and
+- ~~Live Activity countdown~~ — done in v3 (only `LiveActitiyAttributes.swift`; `LiveActivityAttributes.swift` is not in
+  the project). Original note: needs a field in the shared `ContentState` (`LiveActivityAttributes.swift` and
   `LiveActitiyAttributes.swift`), `LiveActivityManager` to push it, and `LiveActivity/Views/LiveActivityView.swift`
   (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity
   (754d441c5), so a high rebase cost.
