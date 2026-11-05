@@ -27,6 +27,10 @@ struct CommandPayload: Decodable, Sendable {
     var basalSchedule: [RemoteBasalSchedule.Segment]?
     var basalScheduleName: String?
     var expectedActiveHash: String?
+    /// `set_carb_ratios` / `set_isf` only (they also use `expected_active_hash`): the schedule and its display name.
+    var carbRatioSchedule: [RemoteTherapySchedule.CarbRatioSegment]?
+    var isfSchedule: [RemoteTherapySchedule.SensitivitySegment]?
+    var scheduleName: String?
     var returnNotification: ReturnNotificationInfo?
 
     /// The mode a `set_dosing_mode` command asks for, or nil when `dosing_mode` is missing or not a known mode.
@@ -68,6 +72,9 @@ struct CommandPayload: Decodable, Sendable {
         case basalSchedule = "basal_schedule"
         case basalScheduleName = "basal_schedule_name"
         case expectedActiveHash = "expected_active_hash"
+        case carbRatioSchedule = "carb_ratio_schedule"
+        case isfSchedule = "isf_schedule"
+        case scheduleName = "schedule_name"
         case returnNotification = "return_notification"
     }
 
@@ -112,6 +119,10 @@ struct CommandPayload: Decodable, Sendable {
             }
         case .setBasalSchedule:
             description += "Basal Schedule: \(basalScheduleName ?? "unnamed"), \(basalSchedule?.count ?? 0) segments."
+        case .setCarbRatios:
+            description += "Carb Ratios: \(scheduleName ?? "unnamed"), \(carbRatioSchedule?.count ?? 0) entries."
+        case .setISF:
+            description += "ISF: \(scheduleName ?? "unnamed"), \(isfSchedule?.count ?? 0) entries."
         }
 
         if let scheduledTime = scheduledTime {
@@ -137,6 +148,8 @@ extension TrioRemoteControl {
         case cancelOverride = "cancel_override"
         case setDosingMode = "set_dosing_mode"
         case setBasalSchedule = "set_basal_schedule"
+        case setCarbRatios = "set_carb_ratios"
+        case setISF = "set_isf"
 
         var description: String {
             switch self {
@@ -156,6 +169,10 @@ extension TrioRemoteControl {
                 return "Set Dosing Mode"
             case .setBasalSchedule:
                 return "Set Basal Schedule"
+            case .setCarbRatios:
+                return "Set Carb Ratios"
+            case .setISF:
+                return "Set ISF"
             }
         }
     }
