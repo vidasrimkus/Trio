@@ -87,7 +87,7 @@ Runner variance is large (restore 54 vs 108 s, build 222 vs 332 s between two wa
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
 | LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
-| LoopFollow → Trio (branch `feat/remote-cr-isf`, not on main yet) | `command_type: "set_carb_ratios"` with `carb_ratio_schedule` = `[{"start":"HH:MM","ratio":<g/U>}]`, `command_type: "set_isf"` with `isf_schedule` = `[{"start":"HH:MM","sensitivity":<integer mg/dL>}]`; both with `schedule_name` and `expected_active_hash` (§11). When Trio shows mmol/L, every ISF value must be the smallest mg/dL of its 0.1 mmol/L group, else rejected "<start>: ISF <v> mg/dL is not a value Trio's mmol/L ISF editor can show (use <m>)."; LoopFollow converts mmol/L input that way. Result: return notification "Carb ratios activated: X" / "ISF activated: X", "Already active: X", or the error (not parsed). Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Carb ratios activated remotely: X (<hash>)" / "ISF activated remotely: X (<hash>)". |
+| LoopFollow → Trio (`feat/remote-cr-isf`, on main since 78c566594; safety rules §12) | `command_type: "set_carb_ratios"` with `carb_ratio_schedule` = `[{"start":"HH:MM","ratio":<g/U>}]`, `command_type: "set_isf"` with `isf_schedule` = `[{"start":"HH:MM","sensitivity":<integer mg/dL>}]`; both with `schedule_name` and `expected_active_hash` (§11). When Trio shows mmol/L, every ISF value must be the smallest mg/dL of its 0.1 mmol/L group, else rejected "<start>: ISF <v> mg/dL is not a value Trio's mmol/L ISF editor can show (use <m>)."; LoopFollow converts mmol/L input that way. Result: return notification "Carb ratios activated: X" / "ISF activated: X", "Already active: X", or the error (not parsed). Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Carb ratios activated remotely: X (<hash>)" / "ISF activated remotely: X (<hash>)". |
 | Trio → t1d-monitor (branch `feature/log-shipper`) | `POST /api/logs`, Bearer token, raw-DEFLATE JSON with the new bytes of `logs/log.txt` and `danakit/dana_log.txt`; response `{"accepted":[…]}`. Full contract in `docs/log-ingest-spec.md` (§8). |
 | Trio → Nightscout → t1d-monitor (branch `feature/log-shipper`) | Notes `[trio-event v1] bolus_deleted …`, `bolus_failed …`, `pump_error …` (grammar in `docs/log-ingest-spec.md` §6.1). The same line is written to Trio's log. |
 
@@ -422,7 +422,7 @@ Stage 2 (not built):
   (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity
   (754d441c5), so a high rebase cost.
 
-## 11. Remote commands `set_carb_ratios` and `set_isf` (branch `feat/remote-cr-isf`)
+## 11. Remote commands `set_carb_ratios` and `set_isf` (branch `feat/remote-cr-isf`, merged to main in 78c566594)
 
 **Purpose.** Replace Trio's carb ratio or ISF schedule from LoopFollow (two separate commands and screens; named
 profiles live in LoopFollow). CR/ISF are Trio-only files (`OpenAPS.Settings.carbRatios`,
@@ -516,7 +516,7 @@ rewrites it (≤ 1 mg/dL, same mmol/L on screen) — upstream editor behaviour.
 Deferred review findings: `docs/cr-isf-todo.md`.
 
 
-## 12. Remote CR/ISF safety (branch `feat/remote-therapy-safety`, not merged)
+## 12. Remote CR/ISF safety (branch `feat/remote-therapy-safety`, merged to main in 9be222465; LoopFollow side not merged yet)
 
 This section supersedes §11 where behavior differs. No algorithm, basal or pump-driver changes.
 - `set_carb_ratios` / `set_isf` compare all 48 half-hour slots against the exact active on-phone values.
