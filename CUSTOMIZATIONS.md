@@ -87,6 +87,7 @@ Runner variance is large (restore 54 vs 108 s, build 222 vs 332 s between two wa
 | Trio → LoopFollow | Result comes back only as the existing return push notification: title "Command Successful" / "Command Failed", body "Dosing mode: X → Y" or "Already in Y" (display names, localized; English on a Lithuanian phone). LoopFollow shows it as a notification; it does not parse it. |
 | Trio → Nightscout → t1d-monitor, LoopFollow | Both read devicestatus `openaps.dosingMode` (set from `settingsManager.settings.dosingMode` at upload time, `NightscoutManager.swift`). The new mode appears there with the next loop cycle (≤ ~5 min). |
 | LoopFollow → Trio (branch `feat/remote-basal-schedule`, not on main yet) | `command_type: "set_basal_schedule"` with `basal_schedule` = `[{"start":"HH:00","rate":<U/h>}]`, `basal_schedule_name`, `expected_active_hash` (§7). Result: return notification "Basal schedule activated: X (a → b U/d)", "Already active: X", or the error. Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Basal schedule activated remotely: X (a → b U/d, <hash>)". |
+| LoopFollow → Trio (branch `feat/remote-cr-isf`, not on main yet) | `command_type: "set_carb_ratios"` with `carb_ratio_schedule` = `[{"start":"HH:MM","ratio":<g/U>}]`, `command_type: "set_isf"` with `isf_schedule` = `[{"start":"HH:MM","sensitivity":<integer mg/dL>}]`; both with `schedule_name` and `expected_active_hash` (§11). Result: return notification "Carb ratios activated: X" / "ISF activated: X", "Already active: X", or the error (not parsed). Nightscout: the updated profile document (existing `uploadProfiles`) plus a Note "Carb ratios activated remotely: X (<hash>)" / "ISF activated remotely: X (<hash>)". |
 | Trio → t1d-monitor (branch `feature/log-shipper`) | `POST /api/logs`, Bearer token, raw-DEFLATE JSON with the new bytes of `logs/log.txt` and `danakit/dana_log.txt`; response `{"accepted":[…]}`. Full contract in `docs/log-ingest-spec.md` (§8). |
 | Trio → Nightscout → t1d-monitor (branch `feature/log-shipper`) | Notes `[trio-event v1] bolus_deleted …`, `bolus_failed …`, `pump_error …` (grammar in `docs/log-ingest-spec.md` §6.1). The same line is written to Trio's log. |
 
@@ -420,3 +421,64 @@ Stage 2 (not built):
   `LiveActitiyAttributes.swift`), `LiveActivityManager` to push it, and `LiveActivity/Views/LiveActivityView.swift`
   (synchronized folder, no pbxproj) — 4 upstream files, and upstream `dev` is actively reworking Live Activity
   (754d441c5), so a high rebase cost.
+
+## 11. Remote commands `set_carb_ratios` and `set_isf` (branch `feat/remote-cr-isf`)
+
+**Purpose.** Replace Trio's carb ratio or ISF schedule from LoopFollow (two separate commands and screens; named
+profiles live in LoopFollow). CR/ISF are Trio-only files (`OpenAPS.Settings.carbRatios`,
+`OpenAPS.Settings.insulinSensitivities`); nothing is written to the pump, so there is **no pump restriction**
+(Dana and Omnipod DASH both accepted).
+
+**Files.** `Trio/Sources/Services/RemoteControl/RemoteTherapySchedule.swift` (new: pure rules — validation, 48
+slots, hashes, pre-check), `TrioRemoteControl+CarbRatios.swift` and `TrioRemoteControl+ISF.swift` (new: handlers),
+`CommandPayload.swift` (`setCarbRatios = "set_carb_ratios"`, `setISF = "set_isf"`, keys `carb_ratio_schedule`,
+`isf_schedule`, `schedule_name`; `expected_active_hash` shared with basal), `TrioRemoteControl.swift` (switch),
+`project.pbxproj`, `TrioTests/RemoteTherapyScheduleTests.swift`. Basal (`set_basal_schedule`, §7) unchanged; no change
+to `APSManager`, `NightscoutManager`, the editors or any pump driver.
+
+**Order in the handler** (both commands).
+1. Incomplete payload (schedule, `schedule_name` or `expected_active_hash` missing) → rejected.
+2. Loop running (`isLooping`; no `APSManager` → treated as running) → rejected, nothing queued (sender retries).
+   No pump check.
+3. Validation: name 1–30 characters after trimming spaces, no quotes or control characters (the basal rule);
+   1–48 entries; first `00:00`; every start `HH:00` or `HH:30` (two digits each), < 24:00; strictly increasing.
+   CR: 1.0 ≤ ratio ≤ 50.0 and a whole number of tenths (the editor grid). ISF: a whole number of mg/dL, 9…540 (the
+   editor picker).
+4. The 48 half-hour slots of the new schedule equal the stored ones **exactly** (Decimal per slot; CR g/U, ISF
+   mg/dL) → "Already active: X", nothing written.
+5. `expected_active_hash` ≠ hash of the stored schedule (CR hash / ISF Nightscout-form hash in the **current**
+   `settings.units`) → rejected ("the active … changed since it was read").
+6. Save exactly as the editor: `CarbRatios(units: .grams, schedule:)` / `InsulinSensitivities(units: .mgdL,
+   userPreferredUnits: .mgdL, sensitivities:)`, entries `start "HH:MM:00"`, `offset` = minutes, through
+   `CarbRatioEditor.Provider` / `ISFEditor.Provider.saveProfile` (the ISF provider's legacy mmol → mg/dL migration
+   runs on read, as when the editor opens).
+7. Editor follow-up: `CarbRatiosObserver.carbRatiosDidChange` / `InsulinSensitivitiesObserver.insulinSensitivitiesDidChange`
+   on main, Nightscout `uploadProfiles`, Tidepool `uploadSettings`; plus a Nightscout Note "Carb ratios activated
+   remotely: X (<new hash>)" / "ISF activated remotely: X (<new hash>)".
+8. Return notification "Carb ratios activated: X" / "ISF activated: X" / "Already active: X" / the error.
+
+**Slots and hashes (shared with LoopFollow).** Slots as in §7 steps 1–2 (48 half-hours, latest start ≤ the minute,
+else the last entry — daily wrap). Hash = lowercase hex of the first 8 bytes of SHA-256 over the UTF-8 canonical
+string; values rounded half-up (`NSDecimalRound(.plain)`), joined with `;`:
+- CR: `"cr;"` + 48 × `ratio × 10`.
+- ISF Nightscout form (what `uploadProfiles` sends as `sens`): units mg/dL → `"isf-mgdl;"` + 48 × mg/dL; units
+  mmol/L → `"isf-mmol;"` + 48 × `asMmolL(mg/dL) × 10` (`asMmolL` = × 0.0555, one decimal, half-up, `BloodGlucose.swift`).
+  Lossy in mmol/L (46 and 47 mg/dL are both 2.6), hence only a guard; "Already active" compares exact mg/dL.
+
+| Schedule | Canonical | Hash |
+|---|---|---|
+| CR1: 00:00 10.0, 06:00 8.5, 11:00 12.0, 17:00 10.5 | cr; 100×12, 85×10, 120×12, 105×14 | `d0f731e0166dbc52` |
+| CR2: 00:00 10 | cr; 100×48 | `eb0120f2d30d1482` |
+| CR3: 00:00 9.0, 07:30 7.5, 20:00 11.0 (also split with 03:00 9.0) | cr; 90×15, 75×25, 110×8 | `82bc62b67556f34a` |
+| CR4 wraps (validation refuses it): 06:00 8.0, 21:00 12.0 | cr; 120×12, 80×30, 120×6 | `ae96c8ecc9e86a8b` |
+| ISF1 mg/dL form: 00:00 180, 08:00 150, 22:00 200 | isf-mgdl; 180×16, 150×28, 200×4 | `88ce4c3c77da0c2b` |
+| ISF1 mmol/L form (NS shows 10.0 / 8.3 / 11.1) | isf-mmol; 100×16, 83×28, 111×4 | `2d0d147868c7adf5` |
+| ISF2 mg/dL form: 00:00 46, 12:30 47 | isf-mgdl; 46×25, 47×23 | `4701d2c3453569ad` |
+| ISF2 mmol/L form (both 2.6) | isf-mmol; 26×48 | `39a70ffcfeb762f2` |
+
+Tested in Trio `RemoteTherapyScheduleTests`; LoopFollow must test the same vectors.
+
+**Known edge.** In mmol/L, Trio's ISF editor offers only the smallest mg/dL of each 0.1 mmol/L bucket
+(`PickerSettingsProvider.generatePickerValues`); a remotely set value such as 47 (shown 2.6) is not one of them. The
+editor then shows the closest picker value; saving on the phone after changing *another* row rewrites that row to the
+picker's mg/dL (same mmol/L on screen, ≤ 1 mg/dL difference).

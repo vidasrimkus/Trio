@@ -36,6 +36,96 @@ enum RemoteTherapySchedule {
         looping ? .message("A loop cycle is running. Try again in a minute.") : nil
     }
 
+    // MARK: - Decision (the handler's steps 1–5, pure)
+
+    /// What the handler does after the checks. Every `.failure` text is passed unchanged to
+    /// `logError(_:payload:)`, i.e. it is the message LoopFollow receives.
+    enum Plan<Entry> {
+        case alreadyActive(name: String, hash: String)
+        case write(name: String, entries: [Entry], activeHash: String, newHash: String)
+    }
+
+    static func rejected(_ reason: String) -> Rejection { .message("Command rejected: \(reason)") }
+
+    /// Steps 1–5 for `set_carb_ratios`. `stored` is read only after the payload is valid.
+    static func planCarbRatios(
+        schedule: [CarbRatioSegment]?,
+        name: String?,
+        expectedHash: String?,
+        looping: Bool,
+        stored: () -> [CarbRatioEntry]
+    ) -> Result<Plan<CarbRatioEntry>, Rejection> {
+        guard let schedule, let name, let expectedHash else {
+            return .failure(rejected("carb ratio schedule data is incomplete."))
+        }
+        if let rejection = precheck(looping: looping) { return .failure(rejected(rejection.text)) }
+        let entries: [CarbRatioEntry]
+        switch validateCarbRatios(name: name, segments: schedule) {
+        case let .success(valid): entries = valid
+        case let .failure(rejection): return .failure(rejected(rejection.text))
+        }
+        let current = stored()
+        let activeHash = carbRatioHash(current)
+        let newHash = carbRatioHash(entries)
+        // Re-sending the schedule that is already in force is safe and changes nothing.
+        guard carbRatioSlots(entries) != carbRatioSlots(current) else {
+            return .success(.alreadyActive(name: name, hash: newHash))
+        }
+        guard expectedHash == activeHash else {
+            return .failure(rejected(
+                "the active carb ratios changed since they were read (expected \(expectedHash), active \(activeHash)). Refresh and try again."
+            ))
+        }
+        return .success(.write(name: name, entries: entries, activeHash: activeHash, newHash: newHash))
+    }
+
+    /// Steps 1–5 for `set_isf`. `units` = the app's glucose units now (what Nightscout shows). `stored` is read only
+    /// after the payload is valid.
+    static func planSensitivities(
+        schedule: [SensitivitySegment]?,
+        name: String?,
+        expectedHash: String?,
+        looping: Bool,
+        units: GlucoseUnits,
+        stored: () -> [InsulinSensitivityEntry]
+    ) -> Result<Plan<InsulinSensitivityEntry>, Rejection> {
+        guard let schedule, let name, let expectedHash else {
+            return .failure(rejected("ISF schedule data is incomplete."))
+        }
+        if let rejection = precheck(looping: looping) { return .failure(rejected(rejection.text)) }
+        let entries: [InsulinSensitivityEntry]
+        switch validateSensitivities(name: name, segments: schedule) {
+        case let .success(valid): entries = valid
+        case let .failure(rejection): return .failure(rejected(rejection.text))
+        }
+        let current = stored()
+        let activeHash = sensitivityNightscoutHash(current, units: units)
+        let newHash = sensitivityNightscoutHash(entries, units: units)
+        // Exact mg/dL comparison: the Nightscout form is lossy in mmol/L (46 and 47 mg/dL are both 2.6).
+        guard sensitivitySlots(entries) != sensitivitySlots(current) else {
+            return .success(.alreadyActive(name: name, hash: newHash))
+        }
+        guard expectedHash == activeHash else {
+            return .failure(rejected(
+                "the active ISF changed since it was read (expected \(expectedHash), active \(activeHash)). Refresh and try again."
+            ))
+        }
+        return .success(.write(name: name, entries: entries, activeHash: activeHash, newHash: newHash))
+    }
+
+    // MARK: - Storage form
+
+    /// The file the ISF editor writes: always mg/dL, whatever the app's display units (the editor's own save).
+    static func sensitivityProfile(_ entries: [InsulinSensitivityEntry]) -> InsulinSensitivities {
+        InsulinSensitivities(units: .mgdL, userPreferredUnits: .mgdL, sensitivities: entries)
+    }
+
+    /// The value Nightscout gets for one stored mg/dL ISF (NightscoutManager.uploadProfiles): unchanged in mg/dL,
+    /// `asMmolL` in mmol/L.
+    static func nightscoutSensitivity(_ mgdl: Decimal, units: GlucoseUnits) -> Decimal {
+        units == .mgdL ? mgdl : mgdl.asMmolL
+    }
+
     // MARK: - Validation
 
     /// Checks the name and the entries and returns the schedule in Trio's storage format (as the editor saves it).
@@ -128,7 +218,9 @@ enum RemoteTherapySchedule {
         return hour * 60 + (parts[1] == "30" ? 30 : 0)
     }
 
-    /// "HH:MM:00", the start format the editors store.
+    /// "HH:MM:00", the start format the editors store. Starts are minutes from midnight in the phone's local time
+    /// and are stored as received: no Date, Calendar or TimeZone is involved (the editors format with a fixed
+    /// GMT formatter, which gives the same string).
     static func storageStart(_ minutes: Int) -> String {
         String(format: "%02d:%02d:00", minutes / 60, minutes % 60)
     }
@@ -179,7 +271,10 @@ enum RemoteTherapySchedule {
         case .mgdL:
             return hashOf(canonical: "isf-mgdl;" + values.map { intText($0) }.joined(separator: ";"))
         case .mmolL:
-            return hashOf(canonical: "isf-mmol;" + values.map { intText($0.asMmolL * 10) }.joined(separator: ";"))
+            return hashOf(
+                canonical: "isf-mmol;" + values.map { intText(nightscoutSensitivity($0, units: .mmolL) * 10) }
+                    .joined(separator: ";")
+            )
         }
     }
 
