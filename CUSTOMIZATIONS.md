@@ -516,7 +516,7 @@ rewrites it (≤ 1 mg/dL, same mmol/L on screen) — upstream editor behaviour.
 Deferred review findings: `docs/cr-isf-todo.md`.
 
 
-## 12. Remote CR/ISF safety (branch `feat/remote-therapy-safety`, merged to main in 9be222465; LoopFollow side not merged yet)
+## 12. Remote CR/ISF safety (branch `feat/remote-therapy-safety`, merged to main in 9be222465; LoopFollow side merged to main in 1139053)
 
 This section supersedes §11 where behavior differs. No algorithm, basal or pump-driver changes.
 - `set_carb_ratios` / `set_isf` compare all 48 half-hour slots against the exact active on-phone values.
