@@ -122,6 +122,12 @@ final class LiveActivityData: ObservableObject {
             name: .liveActivityOrderDidChange,
             object: nil
         )
+        notificationCenter // [vidas] CUSTOMIZATIONS §10: pre-bolus timer armed / ended
+            .addObserver(forName: PreBolusConstants.deadlineDidChange, object: nil, queue: nil) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.pushCurrentContent()
+                }
+            }
     }
 
     /// Called when the app settings change.
@@ -412,7 +418,7 @@ final class LiveActivityData: ObservableObject {
             return
         }
 
-        let content = LiveActivityAttributes.ContentState(
+        var content = LiveActivityAttributes.ContentState(
             new: bg,
             prev: prevGlucose,
             units: settings.units,
@@ -424,6 +430,7 @@ final class LiveActivityData: ObservableObject {
             tempTarget: data.tempTarget,
             widgetItems: data.widgetItems
         )
+        content.mealDeadline = PreBolusNotifier.shared.deadline // [vidas] CUSTOMIZATIONS §10
 
         await pushUpdate(content)
     }

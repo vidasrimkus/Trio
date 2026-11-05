@@ -76,7 +76,8 @@ extension Home {
         @ViewBuilder func mainChart(geo: GeometryProxy) -> some View {
             // the chart is the only flexible zone: it takes what the fixed slots leave over
             let chartHeight = max(
-                geo.size.height - HomeLayout.headerHeight - HomeLayout.mealSlotHeight - HomeLayout.bottomZoneHeight,
+                geo.size.height - HomeLayout.headerHeight - HomeLayout.mealSlotHeight - HomeLayout.bottomZoneHeight
+                    - (PreBolusNotifier.shared.deadline != nil ? PreBolusCountdownView.height : 0), // [vidas] §10
                 HomeLayout.chartMinHeight
             )
             ZStack {
@@ -248,12 +249,13 @@ extension Home {
 
                 mealPanel()
                     .frame(height: HomeLayout.mealSlotHeight)
-                    .overlay(alignment: .bottom) { PreBolusCountdownView() } // [vidas] CUSTOMIZATIONS §10
                     // Fades the readout in and out. Keyed on visibility, not on the date: a
                     // scrub step leaves the flag alone, so only the swap animates and the
                     // values inside keep updating unanimated.
                     .animation(ChartSelectionLookup.readoutFade, value: isChartReadoutVisible)
                     .task(id: chartSelection) { await updateChartReadout() }
+
+                PreBolusCountdownView() // [vidas] CUSTOMIZATIONS §10: own slot only while a timer is armed
 
                 mainChart(geo: geo)
             }

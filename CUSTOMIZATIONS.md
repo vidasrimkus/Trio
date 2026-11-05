@@ -398,6 +398,21 @@ v2 (branch `feature/prebolus-timer-v2`) — the meal start:
   `project.pbxproj` (IDs `B0B05E1A…18` / `…28`). No upstream file changed beyond v1's hooks.
 - Rejected: moving the carb entry's time to the meal start — see `docs/prebolus-timer-todo.md`.
 
+v3 (branch `feature/prebolus-timer-v3`) — visible countdown, also outside the app (replaces v2's tap dialog and the
+small overlay):
+- Home: own row under the meal panel, only while a timer is armed — "🍽️ 12:40 iki valgio" (mm:ss, drawn by the
+  system) with the buttons **Valgau** (`markEating`) and **Atšaukti** (`cancel`), no dialog. The chart gives up the row's
+  56 pt (`PreBolusCountdownView.height`, subtracted in `HomeRootView.mainChart`); the layout shifts only while armed.
+  After the deadline, until `finalizeIfExpired` removes it: "🍽️ Laikas valgyti" + the buttons.
+- Live Activity: `LiveActivityAttributes.ContentState.mealDeadline: Date?` (`LiveActitiyAttributes.swift`, `var` with
+  default nil — no other initializer changed; old states decode as nil). `PreBolusNotifier.store` posts
+  `PreBolusConstants.deadlineDidChange` when the deadline changes; `LiveActivityManager` observes it and pushes
+  (`pushCurrentContent` sets `mealDeadline`). Widget (`LiveActivity/Views/LiveActivityView.swift`,
+  `PreBolusLiveActivityCountdown`): Dynamic Island compact trailing shows "🍽️ 12:40" instead of the delta; expanded
+  and lock screen (simple and detailed) add the row "🍽️ 12:40 iki valgio". Needs Live Activity on (Trio + iOS).
+  After the deadline the island shows 0:00 until the app's next push removes it (the loop cycle's
+  `finalizeIfExpired`). Watch layouts unchanged. Not an interface with LoopFollow / t1d-monitor.
+
 Stage 2 (not built):
 - ~~Food type from the carb entry's note field~~ — done differently: the food-type picker on the bolus row.
 - Live Activity countdown: needs a field in the shared `ContentState` (`LiveActivityAttributes.swift` and

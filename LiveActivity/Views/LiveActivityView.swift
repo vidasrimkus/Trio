@@ -148,6 +148,9 @@ struct LiveActivityView: View {
                         }
                     }
                 }
+                if let mealDeadline = context.state.mealDeadline { // [vidas] CUSTOMIZATIONS §10
+                    PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .lockScreen)
+                }
             }
             .addLiveActivityModifiers(isWatchOS: false)
         } else {
@@ -155,17 +158,22 @@ struct LiveActivityView: View {
                 if context.state.isInitialState {
                     Text("Live Activity Expired. Open Trio to Refresh").minimumScaleFactor(0.01)
                 } else {
-                    HStack(spacing: 3) {
-                        LiveActivityBGAndTrendView(context: context, size: .expanded, glucoseColor: glucoseColor).font(.title)
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 5) {
-                            LiveActivityGlucoseDeltaLabelView(
-                                context: context,
-                                glucoseColor: hasStaticColorScheme ? .primary : glucoseColor
-                            ).font(.title3)
-                            LiveActivityUpdatedLabelView(context: context, isDetailedLayout: false)
-                                .font(.caption)
-                                .foregroundStyle(.primary.opacity(0.7))
+                    VStack(spacing: 6) { // [vidas] CUSTOMIZATIONS §10: VStack for the pre-bolus row
+                        HStack(spacing: 3) {
+                            LiveActivityBGAndTrendView(context: context, size: .expanded, glucoseColor: glucoseColor).font(.title)
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 5) {
+                                LiveActivityGlucoseDeltaLabelView(
+                                    context: context,
+                                    glucoseColor: hasStaticColorScheme ? .primary : glucoseColor
+                                ).font(.title3)
+                                LiveActivityUpdatedLabelView(context: context, isDetailedLayout: false)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary.opacity(0.7))
+                            }
+                        }
+                        if let mealDeadline = context.state.mealDeadline { // [vidas] CUSTOMIZATIONS §10
+                            PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .lockScreen)
                         }
                     }
                 }
@@ -202,9 +210,16 @@ struct LiveActivityExpandedBottomView: View {
     var body: some View {
         if context.state.isInitialState {
             Text("Live Activity Expired. Open Trio to Refresh").minimumScaleFactor(0.01)
-        } else if context.state.useDetailedViewIOS {
-            LiveActivityChartView(context: context, additionalState: context.state.detailedViewState)
-                .addIsWatchOS()
+        } else {
+            VStack(spacing: 4) { // [vidas] CUSTOMIZATIONS §10: pre-bolus countdown above the chart
+                if let mealDeadline = context.state.mealDeadline {
+                    PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .lockScreen)
+                }
+                if context.state.useDetailedViewIOS {
+                    LiveActivityChartView(context: context, additionalState: context.state.detailedViewState)
+                        .addIsWatchOS()
+                }
+            }
         }
     }
 }
@@ -234,7 +249,44 @@ struct LiveActivityCompactTrailingView: View {
     var glucoseColor: Color
 
     var body: some View {
-        LiveActivityGlucoseDeltaLabelView(context: context, glucoseColor: glucoseColor).padding(.trailing, 4)
+        if let mealDeadline = context.state.mealDeadline { // [vidas] CUSTOMIZATIONS §10: countdown replaces the delta
+            PreBolusLiveActivityCountdown(deadline: mealDeadline, size: .compact).padding(.trailing, 4)
+        } else {
+            LiveActivityGlucoseDeltaLabelView(context: context, glucoseColor: glucoseColor).padding(.trailing, 4)
+        }
+    }
+}
+
+/// [vidas] CUSTOMIZATIONS §10: the pre-bolus countdown "🍽️ 12:40 iki valgio". The seconds are drawn by the system;
+/// it stops at 0:00 until the app's next update removes it (the "Laikas valgyti" notification fires at the deadline).
+struct PreBolusLiveActivityCountdown: View {
+    enum Size { case compact, lockScreen }
+
+    let deadline: Date
+    let size: Size
+
+    var body: some View {
+        // never an inverted range: a deadline already passed counts from itself (shows 0:00)
+        let start = min(Date(), deadline)
+        switch size {
+        case .compact:
+            HStack(spacing: 1) {
+                Text(verbatim: "🍽️").font(.caption2)
+                Text(timerInterval: start ... deadline, countsDown: true)
+                    .monospacedDigit()
+                    .frame(maxWidth: 44)
+            }
+        case .lockScreen:
+            HStack(spacing: 4) {
+                Text(verbatim: "🍽️")
+                Text(timerInterval: start ... deadline, countsDown: true)
+                    .monospacedDigit()
+                    .fontWeight(.bold)
+                    .fixedSize()
+                Text(verbatim: "iki valgio").foregroundStyle(.secondary)
+            }
+            .font(.title3)
+        }
     }
 }
 

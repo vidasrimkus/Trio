@@ -225,8 +225,11 @@ struct PreBolusArmedTimer: Codable, Equatable {
     }
 
     private func store(_ timer: PreBolusArmedTimer?) {
+        let changed = deadline != timer?.deadline
         armed = timer
         deadline = timer?.deadline
+        // The Live Activity (Dynamic Island, lock screen) shows the same countdown.
+        if changed { Foundation.NotificationCenter.default.post(name: PreBolusConstants.deadlineDidChange, object: self) }
         if let timer, let data = try? JSONEncoder().encode(timer) {
             defaults.set(data, forKey: PreBolusConstants.armedTimerKey)
         } else {

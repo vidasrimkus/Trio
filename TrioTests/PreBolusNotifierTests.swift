@@ -62,6 +62,30 @@ private final class MockReporter: TrioEventReporter {
         now.addingTimeInterval(value * 60)
     }
 
+    // MARK: - v3: Live Activity
+
+    @Test("Arming and removing the timer each tell the Live Activity once") func postsDeadlineChange() {
+        let f = Fixture()
+        final class Counter { var value = 0 }
+        let posts = Counter()
+        let token = Foundation.NotificationCenter.default.addObserver(
+            forName: PreBolusConstants.deadlineDidChange,
+            object: f.notifier,
+            queue: nil
+        ) { _ in posts.value += 1 }
+        defer { Foundation.NotificationCenter.default.removeObserver(token) }
+
+        _ = f.notifier.arm(plan: wait(15), now: now)
+        let afterArm = posts.value
+        #expect(afterArm == 1)
+        f.notifier.cancel()
+        let afterCancel = posts.value
+        #expect(afterCancel == 2)
+        f.notifier.cancel() // nothing armed: no change, no post
+        let afterSecondCancel = posts.value
+        #expect(afterSecondCancel == 2)
+    }
+
     // MARK: - v1: arming and removal
 
     @Test("A wait schedules one notification at the end of the wait") func schedules() {
