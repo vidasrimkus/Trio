@@ -88,9 +88,9 @@ class TrioRemoteControl: Injectable {
             await handleSetDosingModeCommand(commandPayload)
         case .setBasalSchedule:
             await handleSetBasalScheduleCommand(commandPayload)
-        case .setCarbRatios:
+        case .setCarbRatios, .restorePreviousCarbRatios:
             await handleSetCarbRatiosCommand(commandPayload)
-        case .setISF:
+        case .setISF, .restorePreviousISF:
             await handleSetISFCommand(commandPayload)
         }
     }

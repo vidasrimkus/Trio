@@ -11,7 +11,8 @@ extension TrioRemoteControl {
                     to: returnInfo,
                     commandType: payload.commandType,
                     success: false,
-                    message: errorMessage
+                    message: errorMessage,
+                    commandID: payload.commandID
                 )
             }
         }
@@ -27,7 +28,8 @@ extension TrioRemoteControl {
                 to: returnInfo,
                 commandType: payload.commandType,
                 success: true,
-                message: customNotificationMessage ?? "Command successful"
+                message: customNotificationMessage ?? "Command successful",
+                commandID: payload.commandID
             )
         }
     }

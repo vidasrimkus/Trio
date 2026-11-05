@@ -9,6 +9,7 @@ class RemoteNotificationResponseManager {
         let aps: APSPayload
         let commandStatus: String
         let commandType: String
+        var commandID: UUID?
         let timestamp: TimeInterval
 
         enum CodingKeys: String, CodingKey {
@@ -16,11 +17,18 @@ class RemoteNotificationResponseManager {
             case commandStatus = "command_status"
             case commandType = "command_type"
             case timestamp
+            case commandID = "command_id"
         }
     }
 
     struct APSPayload: Encodable {
         let alert: Alert
+        let contentAvailable: Int = 1
+
+        enum CodingKeys: String, CodingKey {
+            case alert, sound
+            case contentAvailable = "content-available"
+        }
         let sound: String = "default"
     }
 
@@ -33,7 +41,8 @@ class RemoteNotificationResponseManager {
         to returnInfo: CommandPayload.ReturnNotificationInfo?,
         commandType: TrioRemoteControl.CommandType,
         success: Bool,
-        message: String
+        message: String,
+        commandID: UUID? = nil
     ) async {
         guard let returnInfo = returnInfo,
               !returnInfo.deviceToken.isEmpty
@@ -51,6 +60,7 @@ class RemoteNotificationResponseManager {
             ),
             commandStatus: success ? "success" : "failed",
             commandType: commandType.rawValue,
+            commandID: commandID,
             timestamp: Date().timeIntervalSince1970
         )
 

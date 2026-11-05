@@ -468,8 +468,8 @@ import Testing
         )
         let later = text(isfPlan([isfSeg("00:00", "46"), isfSeg("12:30", "47")], units: .mmolL))
         #expect(later == "Command rejected: 12:30: ISF 47 mg/dL is not a value Trio's mmol/L ISF editor can show (use 46).")
-        #expect(text(isfPlan([isfSeg("00:00", "46")], units: .mmolL)) == nil)
-        #expect(text(isfPlan([isfSeg("00:00", "47")], units: .mgdL)) == nil)
+        #expect(text(isfPlan([isfSeg("00:00", "46")], units: .mmolL, stored: isf([(0, 50)]))) == nil)
+        #expect(text(isfPlan([isfSeg("00:00", "47")], units: .mgdL, stored: isf([(0, 50)]))) == nil)
         #expect(R.mmolEditorRejection(isf([(0, 47)]), units: .mgdL) == nil)
     }
 
@@ -501,7 +501,7 @@ import Testing
 
     @Test("The plan hashes in the units it is given; the saved profile is mg/dL") func planUnits() {
         let stored = isf([(0, 180), (480, 150), (1320, 200)])
-        let sent = [isfSeg("00:00", "90")]
+        let sent = [isfSeg("00:00", "180"), isfSeg("08:00", "149"), isfSeg("22:00", "200")]
         // mmol/L plan: the guard compares against the mmol/L Nightscout form of the stored schedule.
         guard case let .success(.write(_, entries, mmolActive, mmolNew)) = isfPlan(
             sent, expected: "2d0d147868c7adf5", units: .mmolL, stored: stored
@@ -510,11 +510,11 @@ import Testing
             return
         }
         #expect(mmolActive == "2d0d147868c7adf5")
-        #expect(mmolNew == R.sensitivityNightscoutHash(isf([(0, 90)]), units: .mmolL))
+        #expect(mmolNew == R.sensitivityNightscoutHash(isf([(0, 180), (480, 149), (1320, 200)]), units: .mmolL))
         let profile = R.sensitivityProfile(entries)
         #expect(profile.units == .mgdL)
         #expect(profile.userPreferredUnits == .mgdL)
-        #expect(profile.sensitivities.map(\.sensitivity) == [90])
+        #expect(profile.sensitivities.map(\.sensitivity) == [180, 149, 200])
         // mg/dL plan: same stored schedule, mg/dL form.
         guard case let .success(.write(_, _, mgdlActive, _)) = isfPlan(
             sent, expected: "88ce4c3c77da0c2b", units: .mgdL, stored: stored
@@ -525,5 +525,144 @@ import Testing
         #expect(mgdlActive == "88ce4c3c77da0c2b")
         // The mmol/L hash is refused by a mg/dL plan.
         #expect(text(isfPlan(sent, expected: "2d0d147868c7adf5", units: .mgdL, stored: stored)) != nil)
+    }
+
+    @Test("Exact ±20% accepted; ±20.1% refused before display rounding", arguments: ["CR", "ISF"])
+    func exactChangeBoundary(label: String) {
+        let old = Array(repeating: Decimal(100), count: 48)
+        for value in ["80", "120"] {
+            #expect(R.changeRejection(old: old, new: Array(repeating: Decimal(string: value)!, count: 48), label: label, unit: "test") == nil)
+        }
+        for value in ["79.9", "120.1"] {
+            let rejection = R.changeRejection(old: old, new: Array(repeating: Decimal(string: value)!, count: 48), label: label, unit: "test")
+            #expect(rejection?.text.contains("20.1") == true)
+        }
+    }
+
+    @Test("CR plan enforces ±20% in exact g/U") func crPlanChangeLimit() {
+        for value in ["8", "12"] {
+            #expect(text(crPlan([crSeg("00:00", value)], stored: cr([(0, "10")]))) == nil)
+        }
+        for value in ["7.9", "12.1"] {
+            #expect(text(crPlan([crSeg("00:00", value)], stored: cr([(0, "10")])))?.contains("±20") == true)
+        }
+    }
+
+    @Test("ISF plan enforces exact mg/dL ±20% in both display units", arguments: [false, true])
+    func isfPlanChangeLimit(mmol: Bool) {
+        let units: GlucoseUnits = mmol ? .mmolL : .mgdL
+        for value in ["72", "108"] {
+            #expect(text(isfPlan([isfSeg("00:00", value)], units: units, stored: isf([(0, 90)]))) == nil)
+        }
+        for value in ["70", "110"] {
+            #expect(text(isfPlan([isfSeg("00:00", value)], units: units, stored: isf([(0, 90)])))?.contains("±20") == true)
+        }
+    }
+
+    @Test("Changed segment boundaries compare every half hour, not segment indexes") func movedBoundary() {
+        let rejection = text(crPlan(
+            [crSeg("00:00", "10"), crSeg("07:30", "20")], stored: cr([(0, "10"), (480, "20")])
+        ))
+        #expect(rejection?.contains("07:30: 10 → 20") == true)
+        #expect(rejection?.contains("100%") == true)
+        #expect(R.changeRejection(old: [], new: Array(repeating: 10, count: 48), label: "CR", unit: "g/U") != nil)
+        #expect(R.changeRejection(old: Array(repeating: 0, count: 48), new: Array(repeating: 10, count: 48), label: "CR", unit: "g/U") != nil)
+    }
+
+}
+
+
+@Suite("Exact remote therapy backup") struct RemoteTherapyBackupTests {
+    @Test("Set then restore preserves CR and mg/dL ISF raw bytes, even redundant segments", arguments: [false, true])
+    func exactRoundTrip(isf: Bool) throws {
+        let storage = BaseFileStorage()
+        let file = "remote-therapy-test-" + UUID().uuidString + ".json"
+        defer { storage.remove(file); storage.remove(RemoteTherapyBackup.filename(file)) }
+        // ISF 47 is deliberately not a mmol/L picker value. Restore must not snap it to 46.
+        let old = isf
+            ? """
+            { "units":"mg/dL", "user_preferred_units":"mg/dL", "sensitivities":[
+              {"start":"00:00:00","offset":0,"sensitivity":47},
+              {"start":"08:00:00","offset":480,"sensitivity":47}] }
+            """
+            : """
+            { "units":"grams", "schedule":[{"start":"00:00:00","offset":0,"ratio":7.0},
+              {"start":"10:00:00","offset":600,"ratio":7.0}] }
+            """
+        storage.save(old, as: file)
+        let changed = isf
+            ? RemoteTherapySchedule.sensitivityProfile([InsulinSensitivityEntry(sensitivity: 38, offset: 0, start: "00:00:00")]).rawJSON
+            : CarbRatios(units: .grams, schedule: [CarbRatioEntry(start: "00:00:00", offset: 0, ratio: 5.6)]).rawJSON
+        let replaced = RemoteTherapyBackup.replace(changed, file: file, storage: storage, preservePrevious: true)
+        #expect(replaced)
+        let backup = try #require(storage.retrieve(RemoteTherapyBackup.filename(file), as: RemoteTherapyBackup.self))
+        #expect(backup.isValid && backup.rawProfile == old)
+        #expect(backup.exactHash == RemoteTherapyBackup.hash(old))
+        #expect(abs(backup.savedAt.timeIntervalSinceNow) < 30)
+        let raw = try RemoteTherapyBackup.restoreRaw(file: file, storage: storage, expectedHash: "current", activeHash: "current", looping: false).get()
+        let restored = RemoteTherapyBackup.replace(raw, file: file, storage: storage, preservePrevious: false)
+        #expect(restored)
+        #expect(storage.retrieveRaw(file)?.data(using: .utf8) == old.data(using: .utf8))
+        let retry = try RemoteTherapyBackup.restoreRaw(file: file, storage: storage, expectedHash: "stale", activeHash: "restored", looping: false).get()
+        #expect(retry == old) // no toggle and original backup remains
+        #expect(storage.retrieve(RemoteTherapyBackup.filename(file), as: RemoteTherapyBackup.self)?.rawProfile == old)
+    }
+
+    @Test("Restore refuses missing/corrupt backup, missing/stale hash and a running loop") func restoreGuards() {
+        let storage = BaseFileStorage()
+        let file = "remote-therapy-guards-" + UUID().uuidString
+        defer { storage.remove(file); storage.remove(RemoteTherapyBackup.filename(file)) }
+        func refused(_ expected: String?, _ looping: Bool = false) -> Bool {
+            if case .failure = RemoteTherapyBackup.restoreRaw(file: file, storage: storage, expectedHash: expected, activeHash: "current", looping: looping) { return true }
+            return false
+        }
+        #expect(refused("current"))
+        storage.save("changed", as: file)
+        storage.save(RemoteTherapyBackup(rawProfile: "previous"), as: RemoteTherapyBackup.filename(file))
+        #expect(refused(nil))
+        #expect(refused("stale"))
+        #expect(refused("current", true))
+        let corrupt = RemoteTherapyBackup(rawProfile: "previous").rawJSON.replacingOccurrences(of: "previous", with: "tampered")
+        storage.save(corrupt, as: RemoteTherapyBackup.filename(file))
+        #expect(refused("current"))
+        #expect(storage.retrieveRaw(file) == "changed")
+    }
+
+    @Test("Missing active file cannot be overwritten without a verified backup") func missingSource() {
+        let storage = BaseFileStorage()
+        let file = "remote-therapy-missing-" + UUID().uuidString
+        let saved = RemoteTherapyBackup.replace("new", file: file, storage: storage, preservePrevious: true)
+        #expect(!saved)
+        #expect(storage.retrieveRaw(file) == nil)
+    }
+
+    @Test("Applied/restore child notification names changes and is silent and noncritical") func notificationContent() {
+        let summary = RemoteTherapySchedule.changeSummary(old: Array(repeating: 7, count: 48), new: Array(repeating: 8, count: 48))
+        let content = RemoteTherapyBackup.notification(label: "CR", restored: false, summary: summary)
+        #expect(content.title == "CR pakeistas iš LoopFollow")
+        #expect(content.body.contains("00:00 7 → 8"))
+        #expect(content.sound == nil)
+        #expect(content.interruptionLevel == .active)
+        #expect(RemoteTherapyBackup.notification(label: "ISF", restored: true, summary: "test").title == "ISF atkurtas iš LoopFollow")
+    }
+
+    @Test("Restore commands decode with correlation ID; response includes the same machine ID") func commandAndResponse() throws {
+        let id = UUID()
+        for command in ["restore_previous_carb_ratios", "restore_previous_isf"] {
+            let json = """
+            {"user":"LoopFollow","command_type":"\(command)","command_id":"\(id.uuidString)","timestamp":100,"expected_active_hash":"abc"}
+            """
+            let payload = try JSONDecoder().decode(CommandPayload.self, from: Data(json.utf8))
+            #expect(payload.commandID == id)
+            #expect(payload.expectedActiveHash == "abc")
+            #expect(payload.carbRatioSchedule == nil && payload.isfSchedule == nil)
+        }
+        let response = RemoteNotificationResponseManager.NotificationPayload(
+            aps: .init(alert: .init(title: "Command Successful", body: "done")),
+            commandStatus: "success", commandType: "set_isf", commandID: id, timestamp: 100
+        )
+        let json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(response)) as? [String: Any])
+        #expect(json["command_id"] as? String == id.uuidString)
+        #expect((json["aps"] as? [String: Any])?["content-available"] as? Int == 1)
     }
 }
