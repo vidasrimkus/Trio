@@ -30,6 +30,9 @@ struct LiveActivityAttributes: ActivityAttributes {
 
         /// true for the first state that is set on the activity
         let isInitialState: Bool
+
+        /// [vidas] CUSTOMIZATIONS §10: end of the armed pre-bolus wait ("valgyti iki"); nil = no timer.
+        var mealDeadline: Date? = nil
     }
 
     struct ContentAdditionalState: Codable, Hashable {

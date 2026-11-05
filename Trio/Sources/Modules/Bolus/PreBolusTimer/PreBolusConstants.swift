@@ -91,11 +91,12 @@ enum PreBolusConstants {
     static let mealTypeTitle = "Maistas"
     static let notificationTitle = "Laikas valgyti"
     static let notificationBody = "🍽️ Pre-bolus laikas baigėsi"
-    static let dialogTitle = "Pre-bolus laikmatis"
-    static let dialogMessage = "„Valgau“ – valgymo pradžia dabar. „Atšaukti“ – laikmatis nuimamas, niekas neįrašoma."
     static let actionEating = "Valgau"
     static let actionCancel = "Atšaukti"
-    static let actionClose = "Uždaryti"
+    /// Home row and Live Activity: "🍽️ 12:40 iki valgio".
+    static let textUntilMeal = "iki valgio"
+    /// Posted when `PreBolusNotifier.deadline` changes; the Live Activity pushes the new deadline.
+    static let deadlineDidChange = Notification.Name("Trio.preBolusDeadlineDidChange")
     static let settingSilentTitle = "Tylus priminimas"
     static let settingSilentFooter = "Pre-bolus priminimas „Laikas valgyti“: tik vibracija; jei telefonas nevibruoja – tik vizualinis pranešimas."
 }
