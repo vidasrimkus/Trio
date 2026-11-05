@@ -98,6 +98,7 @@ enum RemoteTherapySchedule {
         case let .success(valid): entries = valid
         case let .failure(rejection): return .failure(rejected(rejection.text))
         }
+        if let rejection = mmolEditorRejection(entries, units: units) { return .failure(rejected(rejection.text)) }
         let current = stored()
         let activeHash = sensitivityNightscoutHash(current, units: units)
         let newHash = sensitivityNightscoutHash(entries, units: units)
@@ -111,6 +112,35 @@ enum RemoteTherapySchedule {
             ))
         }
         return .success(.write(name: name, entries: entries, activeHash: activeHash, newHash: newHash))
+    }
+
+    // MARK: - mmol/L editor values
+
+    /// The smallest mg/dL in `minSensitivity…mgdl` with the same `asMmolL` (0.1 mmol/L group) as `mgdl`. In mmol/L
+    /// mode Trio's ISF editor offers only these values (PickerSettingsProvider.generatePickerValues keeps the first,
+    /// i.e. smallest, mg/dL of each group).
+    static func smallestMgdlInMmolGroup(_ mgdl: Decimal) -> Decimal {
+        let group = mgdl.asMmolL
+        var smallest = mgdl
+        while smallest - 1 >= minSensitivity, (smallest - 1).asMmolL == group {
+            smallest -= 1
+        }
+        return smallest
+    }
+
+    /// In mmol/L mode, refuses a sensitivity the editor could not show (and would silently rewrite on the next save
+    /// on the phone). Runs after validation, so every value is an integer in 9…540. No rule in mg/dL mode.
+    static func mmolEditorRejection(_ entries: [InsulinSensitivityEntry], units: GlucoseUnits) -> Rejection? {
+        guard units == .mmolL else { return nil }
+        for entry in entries {
+            let smallest = smallestMgdlInMmolGroup(entry.sensitivity)
+            if smallest != entry.sensitivity {
+                return .message(
+                    "\(entry.start.prefix(5)): ISF \(entry.sensitivity) mg/dL is not a value Trio's mmol/L ISF editor can show (use \(smallest))."
+                )
+            }
+        }
+        return nil
     }
 
     // MARK: - Storage form

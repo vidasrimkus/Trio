@@ -458,4 +458,72 @@ import Testing
         let entries = isf([(0, 90)])
         #expect(R.sensitivityNightscoutHash(entries, units: .mmolL) != R.sensitivityNightscoutHash(entries, units: .mgdL))
     }
+
+    // MARK: mmol/L editor guard
+
+    @Test("mmol/L: 47 is refused (use 46), 46 accepted; mg/dL: 47 accepted") func mmolEditorGuard() {
+        #expect(
+            text(isfPlan([isfSeg("00:00", "47")], units: .mmolL))
+                == "Command rejected: 00:00: ISF 47 mg/dL is not a value Trio's mmol/L ISF editor can show (use 46)."
+        )
+        let later = text(isfPlan([isfSeg("00:00", "46"), isfSeg("12:30", "47")], units: .mmolL))
+        #expect(later == "Command rejected: 12:30: ISF 47 mg/dL is not a value Trio's mmol/L ISF editor can show (use 46).")
+        #expect(text(isfPlan([isfSeg("00:00", "46")], units: .mmolL)) == nil)
+        #expect(text(isfPlan([isfSeg("00:00", "47")], units: .mgdL)) == nil)
+        #expect(R.mmolEditorRejection(isf([(0, 47)]), units: .mgdL) == nil)
+    }
+
+    @Test("Every value the mmol/L ISF editor produces passes the guard") func editorValuesPass() {
+        let setting = PickerSetting(value: 100, step: 1, min: 9, max: 540, type: .glucose)
+        let values = PickerSettingsProvider.shared.generatePickerValues(from: setting, units: .mmolL)
+        #expect(values.count == 296)
+        for value in values {
+            #expect(R.smallestMgdlInMmolGroup(value) == value, "\(value) mg/dL")
+            #expect(R.mmolEditorRejection(isf([(0, NSDecimalNumber(decimal: value).intValue)]), units: .mmolL) == nil)
+        }
+        // And nothing else passes: the accepted set is exactly the editor's set.
+        let accepted = (9 ... 540).filter { R.mmolEditorRejection(isf([(0, $0)]), units: .mmolL) == nil }.map { Decimal($0) }
+        #expect(accepted == values)
+    }
+
+    @Test(
+        "Contract mmol/L → mg/dL vectors are the smallest of their group",
+        arguments: [("0.6", 10), ("2.2", 39), ("2.6", 46), ("8.3", 149), ("10.0", 180), ("0.5", 9), ("5.0", 90), ("30.0", 540)]
+    ) func mmolVectors(mmol: String, mgdl: Int) {
+        let value = Decimal(mgdl)
+        #expect(R.nightscoutSensitivity(value, units: .mmolL) == Decimal(string: mmol)!)
+        #expect(R.smallestMgdlInMmolGroup(value) == value)
+        if mgdl > 9 { #expect(R.nightscoutSensitivity(value - 1, units: .mmolL) != Decimal(string: mmol)!) }
+        #expect(R.mmolEditorRejection(isf([(0, mgdl)]), units: .mmolL) == nil)
+    }
+
+    // MARK: Units given to the plan
+
+    @Test("The plan hashes in the units it is given; the saved profile is mg/dL") func planUnits() {
+        let stored = isf([(0, 180), (480, 150), (1320, 200)])
+        let sent = [isfSeg("00:00", "90")]
+        // mmol/L plan: the guard compares against the mmol/L Nightscout form of the stored schedule.
+        guard case let .success(.write(_, entries, mmolActive, mmolNew)) = isfPlan(
+            sent, expected: "2d0d147868c7adf5", units: .mmolL, stored: stored
+        ) else {
+            Issue.record("expected a write plan in mmol/L")
+            return
+        }
+        #expect(mmolActive == "2d0d147868c7adf5")
+        #expect(mmolNew == R.sensitivityNightscoutHash(isf([(0, 90)]), units: .mmolL))
+        let profile = R.sensitivityProfile(entries)
+        #expect(profile.units == .mgdL)
+        #expect(profile.userPreferredUnits == .mgdL)
+        #expect(profile.sensitivities.map(\.sensitivity) == [90])
+        // mg/dL plan: same stored schedule, mg/dL form.
+        guard case let .success(.write(_, _, mgdlActive, _)) = isfPlan(
+            sent, expected: "88ce4c3c77da0c2b", units: .mgdL, stored: stored
+        ) else {
+            Issue.record("expected a write plan in mg/dL")
+            return
+        }
+        #expect(mgdlActive == "88ce4c3c77da0c2b")
+        // The mmol/L hash is refused by a mg/dL plan.
+        #expect(text(isfPlan(sent, expected: "2d0d147868c7adf5", units: .mgdL, stored: stored)) != nil)
+    }
 }
