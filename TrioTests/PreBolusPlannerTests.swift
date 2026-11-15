@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import Testing
 @testable import Trio
@@ -38,8 +39,26 @@ import Testing
         return nil
     }
 
-    func plan(_ mmol: [String], _ type: PreBolusMealType = .normal, carbs: Decimal = 40) -> PreBolusPlan {
-        PreBolusPlanner.plan(carbs: carbs, readings: series(mmol), now: now, mealType: type)
+    /// Loop target in mg/dL whose `asMmolL` is `mmol`.
+    func target(_ mmol: String) -> Decimal { Decimal(mg(mmol)) }
+
+    /// The older tests' target: 4.0 mmol/L, below every BG they use, so their rules stay exactly as before.
+    var lowTarget: Decimal { target("4.0") }
+
+    func plan(
+        _ mmol: [String],
+        _ type: PreBolusMealType = .normal,
+        carbs: Decimal = 40,
+        target loopTarget: Decimal? = nil,
+        noTarget: Bool = false
+    ) -> PreBolusPlan {
+        PreBolusPlanner.plan(
+            carbs: carbs,
+            readings: series(mmol),
+            now: now,
+            mealType: type,
+            loopTargetMgdl: noTarget ? nil : (loopTarget ?? lowTarget)
+        )
     }
 
     let flat8 = ["8.0", "8.0", "8.0", "8.0"] // BG 8.0 → 14 min
@@ -67,8 +86,8 @@ import Testing
 
     @Test("Stale CGM: no advice") func stale() {
         let readings = series(flat8, newestAgo: 11 * 60)
-        #expect(PreBolusPlanner.plan(carbs: 40, readings: readings, now: now) == .noData)
-        #expect(PreBolusPlanner.plan(carbs: 40, readings: [], now: now) == .noData)
+        #expect(PreBolusPlanner.plan(carbs: 40, readings: readings, now: now, loopTargetMgdl: lowTarget) == .noData)
+        #expect(PreBolusPlanner.plan(carbs: 40, readings: [], now: now, loopTargetMgdl: lowTarget) == .noData)
     }
 
     // MARK: - Safety first
@@ -148,7 +167,7 @@ import Testing
     }
 
     @Test("Wait ends now + minutes; default type is normal") func untilAndDefault() {
-        guard case let .wait(m, until) = PreBolusPlanner.plan(carbs: 40, readings: series(flat8), now: now) else {
+        guard case let .wait(m, until) = PreBolusPlanner.plan(carbs: 40, readings: series(flat8), now: now, loopTargetMgdl: lowTarget) else {
             Issue.record("expected a wait")
             return
         }
@@ -161,6 +180,7 @@ import Testing
         #expect(PreBolusTimerRow.text(for: .eatNow) == "🍽️ Valgyk iškart")
         #expect(PreBolusTimerRow.text(for: .bolusWhileEating) == "🍽️ Bolusas valgant – valgyk iškart")
         #expect(PreBolusTimerRow.text(for: .alreadyEating) == "Atrodo, jau valgai – kitą kartą bolusas anksčiau")
+        #expect(PreBolusTimerRow.text(for: .noTarget) == "Nėra galiojančio loop tikslo – laukimo patarimo nėra")
         #expect(PreBolusTimerRow.text(for: .wait(minutes: 15, until: now))?.hasPrefix("🍽️ Valgyk po 15 min (") == true)
     }
 
@@ -168,5 +188,106 @@ import Testing
         #expect(PreBolusMealType.allCases.map(\.label) == ["Greitas", "Įprastas", "Lėtas", "Riebus"])
         #expect(PreBolusMealType.allCases.map(\.baseMinutes) == [30, 15, 10, 30])
         #expect(PreBolusMealType.allCases.map(\.rawValue) == ["fast", "normal", "slow", "fatty"])
+    }
+
+    // MARK: - Rise at or below the loop target (CUSTOMIZATIONS §10, v4)
+
+    /// 2026-11-15 11:51 (bolus of the 12:13 meal): 4.8 → 4.9 → 5.3 → 5.4, loop target 5.8.
+    let today = ["4.8", "4.9", "5.3", "5.4"] // +0.6 / 15 min, +0.5 / 10 min
+
+    @Test("2026-11-15: BG 5.4 rising, target 5.8 → 15 min (was 22)") func todayAtTarget() {
+        #expect(target("5.8").asMmolL == d("5.8"))
+        #expect(minutes(plan(today, .normal, target: target("5.8"))) == 15)
+        #expect(minutes(plan(today, .normal)) == 22) // the same readings with a target below them: unchanged rule
+    }
+
+    @Test("BG equal to the target: a rise adds nothing; food minimums stay") func equalTarget() {
+        let toTarget = ["5.2", "5.4", "5.6", "5.8"] // +0.6 / 15 min, +0.4 / 10 min
+        #expect(minutes(plan(toTarget, .normal, target: target("5.8"))) == 15)
+        #expect(minutes(plan(toTarget, .slow, target: target("5.8"))) == 10) // max(round(5.8 × 1.8), 10)
+        #expect(minutes(plan(toTarget, .fast, target: target("5.8"))) == 30) // flat: base 30, no +5
+        #expect(minutes(plan(toTarget, .fatty, target: target("5.8"))) == 30)
+    }
+
+    @Test("BG above the target: rising rules unchanged") func aboveTarget() {
+        let above = ["5.4", "5.6", "5.8", "6.0"] // +0.6 / 15 min
+        #expect(minutes(plan(above, .normal, target: target("5.8"))) == 22)
+        #expect(minutes(plan(above, .slow, target: target("5.8"))) == 17)
+        #expect(minutes(plan(above, .fast, target: target("5.8"))) == 35)
+        #expect(minutes(plan(above, .fatty, target: target("5.8"))) == 35)
+    }
+
+    @Test("Only a rise changes: falling and flat at or below the target are unchanged") func otherTrendsAtTarget() {
+        #expect(minutes(plan(["6.0", "5.9", "5.8", "5.6"], .normal, target: target("5.8"))) == 7) // falling
+        #expect(plan(["6.0", "5.9", "5.8", "5.6"], .slow, target: target("5.8")) == .bolusWhileEating)
+        #expect(minutes(plan(["5.6", "5.6", "5.6", "5.6"], .normal, target: target("5.8"))) == 15) // flat
+    }
+
+    @Test("Temporary target: the higher target in force decides") func temporaryTarget() {
+        let rising74 = ["6.8", "7.0", "7.2", "7.4"] // +0.6 / 15 min, BG 7.4
+        #expect(minutes(plan(rising74, .normal, target: target("5.8"))) == 22) // profile target: above it
+        #expect(minutes(plan(rising74, .normal, target: target("8.3"))) == 15) // temp target 8.3: at or below it
+    }
+
+    @Test("No target in force: no wait advice, nothing guessed") func missingTarget() {
+        #expect(plan(today, .normal, noTarget: true) == .noTarget)
+        #expect(plan(flat8, .fast, noTarget: true) == .noTarget)
+        #expect(PreBolusPlanner.plan(carbs: 40, readings: series(flat8), now: now, loopTargetMgdl: 0) == .noTarget)
+    }
+
+    @Test("Low BG and drop checks come first, with or without a target") func safetyFirstWithTarget() {
+        let low = ["4.3", "4.5", "4.7", "4.9"] // rising, but BG < 5.0
+        let drop = ["9.0", "8.6", "8.3", "8.0"] // −1.0 / 15 min
+        #expect(plan(low, .normal, target: target("5.8")) == .eatNow)
+        #expect(plan(low, .normal, noTarget: true) == .eatNow)
+        #expect(plan(drop, .normal, target: target("8.3")) == .eatNow)
+        #expect(plan(drop, .normal, noTarget: true) == .eatNow)
+        #expect(plan(["7.0", "7.0", "7.0", "8.1"], .normal, noTarget: true) == .alreadyEating)
+        #expect(plan([], .normal, noTarget: true) == .noData)
+        #expect(plan(today, .normal, carbs: 0, noTarget: true) == .hidden)
+    }
+}
+
+/// `PreBolusLoopTarget`: the newest determination's `currentTarget`, only while it is at most 30 min old.
+@Suite("Pre-bolus loop target", .serialized) struct PreBolusLoopTargetTests {
+    let now = Date(timeIntervalSince1970: 1_793_640_000)
+
+    /// Determinations newest first, `ago` seconds before `now`; the lookup runs on the objects' context.
+    func target(_ specs: [(ago: TimeInterval, target: Decimal?)]) async throws -> Decimal? {
+        let stack = try await CoreDataStack.createForTests()
+        let context = stack.newTaskContext()
+        let now = self.now
+        defer { withExtendedLifetime(stack) {} }
+        return await context.perform {
+            let objects = specs.map { spec -> OrefDetermination in
+                let d = OrefDetermination(context: context)
+                d.id = UUID()
+                d.deliverAt = now.addingTimeInterval(-spec.ago)
+                d.currentTarget = spec.target.map { NSDecimalNumber(decimal: $0) }
+                return d
+            }
+            return PreBolusLoopTarget.mgdl(from: objects, now: now)
+        }
+    }
+
+    @Test("Newest fresh determination: its target (a temp target included)") func fresh() async throws {
+        let value = try await target([(ago: 4 * 60, target: 150), (ago: 9 * 60, target: 105)])
+        #expect(value == 150)
+    }
+
+    @Test("Exactly 30 min old still counts; older is no target") func age() async throws {
+        let edge = try await target([(ago: 30 * 60, target: 105)])
+        let stale = try await target([(ago: 30 * 60 + 1, target: 105)])
+        #expect(edge == 105)
+        #expect(stale == nil)
+    }
+
+    @Test("No determination, no target value, or 0: no target") func missing() async throws {
+        let none = try await target([])
+        let empty = try await target([(ago: 60, target: nil)])
+        let zero = try await target([(ago: 60, target: 0)])
+        #expect(none == nil)
+        #expect(empty == nil)
+        #expect(zero == nil)
     }
 }

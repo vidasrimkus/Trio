@@ -6,6 +6,8 @@ import SwiftUI
 struct PreBolusTimerRow: View {
     let carbs: Decimal
     let glucose: [GlucoseStored]
+    /// Newest first (`Treatments.StateModel.determination`): the loop target in force (`PreBolusLoopTarget`).
+    let determinations: [OrefDetermination]
     private let notifier = PreBolusNotifier.shared
 
     var body: some View {
@@ -30,7 +32,8 @@ struct PreBolusTimerRow: View {
                         carbs: carbs,
                         readings: PreBolusReading.from(glucose),
                         now: context.date,
-                        mealType: notifier.mealType(now: context.date)
+                        mealType: notifier.mealType(now: context.date),
+                        loopTargetMgdl: PreBolusLoopTarget.mgdl(from: determinations, now: context.date)
                     )
                     if let text = Self.text(for: plan) {
                         Text(text)
@@ -49,6 +52,7 @@ struct PreBolusTimerRow: View {
         case .eatNow: return PreBolusConstants.textEatNow
         case .bolusWhileEating: return PreBolusConstants.textBolusWhileEating
         case .alreadyEating: return PreBolusConstants.textAlreadyEating
+        case .noTarget: return PreBolusConstants.textNoTarget
         case let .wait(minutes, until):
             return PreBolusConstants.textWait(minutes: minutes, until: until.formatted(date: .omitted, time: .shortened))
         }

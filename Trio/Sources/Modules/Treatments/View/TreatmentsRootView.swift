@@ -313,7 +313,7 @@ extension Treatments {
                 ))
                 .accessibilityHint(Text("Copies the recommended amount into the bolus field"))
             }
-            PreBolusTimerRow(carbs: state.carbs, glucose: state.glucoseFromPersistence) // [vidas] CUSTOMIZATIONS §10
+            PreBolusTimerRow(carbs: state.carbs, glucose: state.glucoseFromPersistence, determinations: state.determination) // [vidas] CUSTOMIZATIONS §10
 
             HStack {
                 Text("Bolus")

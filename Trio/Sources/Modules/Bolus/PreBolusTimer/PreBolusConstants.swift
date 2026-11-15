@@ -67,6 +67,9 @@ enum PreBolusConstants {
 
     /// Newest CGM reading older than this: no advice.
     static let freshness: TimeInterval = 10 * 60
+    /// The newest determination older than this has no loop target in force (`PreBolusLoopTarget`) — the same
+    /// 30 min window as Trio's own determination fetch (`NSPredicate.predicateFor30MinAgoForDetermination`).
+    static let loopTargetMaxAge: TimeInterval = 30 * 60
     /// A reading counts as "15 / 10 min ago" within ± this.
     static let lookbackTolerance: TimeInterval = 3 * 60
     /// The food type picked on the bolus screen falls back to "Įprastas" after this (or after the bolus is enacted).
@@ -87,6 +90,7 @@ enum PreBolusConstants {
     static let textBolusWhileEating = "🍽️ Bolusas valgant – valgyk iškart"
     static let textAlreadyEating = "Atrodo, jau valgai – kitą kartą bolusas anksčiau"
     static let textNoData = "Nėra šviežių CGM duomenų – valgyk įprastai"
+    static let textNoTarget = "Nėra galiojančio loop tikslo – laukimo patarimo nėra"
     static func textWait(minutes: Int, until: String) -> String { "🍽️ Valgyk po \(minutes) min (\(until))" }
     static let mealTypeTitle = "Maistas"
     static let notificationTitle = "Laikas valgyti"

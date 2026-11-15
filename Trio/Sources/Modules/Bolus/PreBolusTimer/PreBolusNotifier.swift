@@ -104,9 +104,11 @@ struct PreBolusArmedTimer: Codable, Equatable {
 
     /// The hook in `Treatments.StateModel.addPumpInsulin`: plans from the bolus screen's data and returns the
     /// callback to pass to `apsManager.enactBolus`. `glucose` is newest first; only the last hour is read.
+    /// `determinations`: newest first, for the loop target in force (`PreBolusLoopTarget`).
     @MainActor func arm(
         carbs: Decimal,
         glucose: [GlucoseStored],
+        determinations: [OrefDetermination],
         lastError: AnyPublisher<Error?, Never>,
         now: Date = Date()
     ) -> ((Bool, String) -> Void)? {
@@ -115,7 +117,8 @@ struct PreBolusArmedTimer: Codable, Equatable {
             carbs: carbs,
             readings: PreBolusReading.from(Array(glucose.prefix(12))),
             now: now,
-            mealType: type
+            mealType: type,
+            loopTargetMgdl: PreBolusLoopTarget.mgdl(from: determinations, now: now)
         )
         return arm(plan: plan, mealType: type, lastError: lastError, now: now)
     }

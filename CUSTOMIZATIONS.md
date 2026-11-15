@@ -414,6 +414,22 @@ small overlay):
   After the deadline the island shows 0:00 until the app's next push removes it (the loop cycle's
   `finalizeIfExpired`). Watch layouts unchanged. Not an interface with LoopFollow / t1d-monitor.
 
+v4 (branch `feature/prebolus-target-rise`) — no rise extension at or below the loop target:
+- After the safety checks and "already eating": the loop target in force = `currentTarget` of the newest
+  determination (`Treatments.StateModel.determination`, a temporary target included), mg/dL, only while that
+  determination is ≤ 30 min old (`PreBolusConstants.loopTargetMaxAge`, the window of Trio's own determination fetch).
+  No such target → `PreBolusPlan.noTarget`, "Nėra galiojančio loop tikslo – laukimo patarimo nėra", no timer; the
+  profile target is not used as a fallback.
+- BG ≤ that target (both mmol/L, one decimal, as Trio shows them) and rising → the wait is computed as for a flat
+  trend: max(round(BG × 1.8), food base). BG > target: unchanged. Falling / flat: unchanged.
+- Example 2026-11-15 11:51: BG 5.4 (+0.6 / 15 min), target 5.8 → 15 min instead of 22.
+- This removes the rise extension at the target; it is **not** an individually approved safe wait. Bolus amount, IOB,
+  SMB, food bases, the running timer and the cap are unchanged.
+- Files: `PreBolusPlanner.swift` (`PreBolusLoopTarget`, `noTarget`), `PreBolusConstants.swift`, `PreBolusTimerRow.swift`,
+  `PreBolusNotifier.swift` (`arm(determinations:)`), the two existing one-line hooks in `TreatmentsRootView.swift` and
+  `TreatmentsStateModel.swift`; tests in `PreBolusPlannerTests.swift` (incl. `PreBolusLoopTargetTests`) and
+  `PreBolusNotifierTests.swift`. No interface with LoopFollow / t1d-monitor changes (`meal_started` unchanged).
+
 Stage 2 (not built):
 - ~~Food type from the carb entry's note field~~ — done differently: the food-type picker on the bolus row.
 - ~~Live Activity countdown~~ — done in v3 (only `LiveActitiyAttributes.swift`; `LiveActivityAttributes.swift` is not in

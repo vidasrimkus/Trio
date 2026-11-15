@@ -102,7 +102,7 @@ private final class MockReporter: TrioEventReporter {
         #expect(f.notifier.deadline == now.addingTimeInterval(900))
     }
 
-    @Test("No-wait plans schedule nothing", arguments: [PreBolusPlan.hidden, .noData, .eatNow, .bolusWhileEating, .alreadyEating])
+    @Test("No-wait plans schedule nothing", arguments: [PreBolusPlan.hidden, .noData, .eatNow, .bolusWhileEating, .alreadyEating, .noTarget])
     func nothingScheduled(plan: PreBolusPlan) {
         let f = Fixture()
         let callback = f.notifier.arm(plan: plan, now: now)

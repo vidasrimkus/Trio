@@ -20,7 +20,25 @@ enum PreBolusPlan: Equatable {
     /// Slow food while falling: the wait comes out as 0 — bolus and eat together.
     case bolusWhileEating
     case alreadyEating
+    /// No loop target in force (no determination in the last `loopTargetMaxAge`): no wait advice, nothing guessed.
+    case noTarget
     case wait(minutes: Int, until: Date)
+}
+
+/// The loop target in force: `currentTarget` of the newest determination (oref's target for that cycle — a
+/// temporary target included), mg/dL. `nil` when that determination is older than `loopTargetMaxAge` or has no
+/// target; never the profile target or any other guess.
+enum PreBolusLoopTarget {
+    /// `determinations`: newest first, as `Treatments.StateModel.determination` holds them.
+    static func mgdl(from determinations: [OrefDetermination], now: Date) -> Decimal? {
+        guard let newest = determinations.first,
+              let deliverAt = newest.deliverAt,
+              now.timeIntervalSince(deliverAt) <= PreBolusConstants.loopTargetMaxAge,
+              let target = newest.currentTarget?.decimalValue,
+              target > 0
+        else { return nil }
+        return target
+    }
 }
 
 enum PreBolusTrend: Equatable {
@@ -34,6 +52,8 @@ enum PreBolusTrend: Equatable {
 /// 1. no carbs → hidden; newest CGM older than 10 min → no data;
 /// 2. safety first: BG < 5.0, or a drop of ≥ 1.0 over 15 min → eat now;
 /// 3. rise > 1.0 over 10 min → already eating;
+/// 3a. no loop target in force → no target (no wait advice); BG ≤ that target (mmol/L as shown) and rising →
+///     the wait is computed as for a flat trend (the rise adds nothing at or below target);
 /// 4. wait = max(round(BG × 1.8), base by food type: fast 30 / normal 15 / slow 10 / fatty 30);
 /// 5. trend over 15 min — falling (≤ −0.3): fast/fatty → 12, normal → 7, slow → 0 (bolus while eating);
 ///    flat: unchanged; rising (≥ +0.3): fast/fatty +5, normal at least 22, slow at least 17;
@@ -42,9 +62,14 @@ enum PreBolusTrend: Equatable {
 enum PreBolusPlanner {
     private typealias C = PreBolusConstants
 
-    static func plan(carbs: Decimal, readings: [PreBolusReading], now: Date, mealType: PreBolusMealType = .normal)
-        -> PreBolusPlan
-    {
+    /// `loopTargetMgdl`: `PreBolusLoopTarget.mgdl(…)`; `nil` = no target in force.
+    static func plan(
+        carbs: Decimal,
+        readings: [PreBolusReading],
+        now: Date,
+        mealType: PreBolusMealType = .normal,
+        loopTargetMgdl: Decimal?
+    ) -> PreBolusPlan {
         guard carbs > 0 else { return .hidden }
         let sorted = readings.sorted { $0.date > $1.date }
         guard let newest = sorted.first, now.timeIntervalSince(newest.date) <= C.freshness else { return .noData }
@@ -61,12 +86,16 @@ enum PreBolusPlanner {
             return .alreadyEating
         }
 
-        let trend: PreBolusTrend
+        guard let loopTargetMgdl, loopTargetMgdl > 0 else { return .noTarget }
+
+        var trend: PreBolusTrend
         if let delta15 {
             trend = delta15 <= C.fallingDelta15 ? .falling : delta15 >= C.risingDelta15 ? .rising : .flat
         } else {
             trend = .falling // trend unknown: take the shorter wait
         }
+        // At or below the loop target a rise adds nothing to the wait; only the wait uses this.
+        if trend == .rising, bg <= loopTargetMgdl.asMmolL { trend = .flat }
 
         let minutes = min(max(waitMinutes(bg: bg, mealType: mealType, trend: trend), 0), C.maxMinutes)
         if minutes == 0 { return .bolusWhileEating }
