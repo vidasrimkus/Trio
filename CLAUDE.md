@@ -52,6 +52,8 @@ Rule for this list: every CI failure whose cause would repeat gets a line here, 
   NOT be listed by hand). Copy the pattern of the previous `[vidas]` commit.
 - Tests are Swift Testing (`import Testing`, `@Suite`, `#expect`); a `mutating` call inside `#expect` is fragile —
   compute into a `let` first.
+- An array of labelled tuple literals with arithmetic (`[(ago: 4 * 60, target: 150)]`) infers `Int` and does not convert
+  to `[(ago: TimeInterval, target: Decimal?)]` — use a small struct (`TrioTests/PreBolusPlannerTests.swift`, `Spec`).
 - `startBackgroundTask(withName:)` in `Trio/Sources/Helpers/BackgroundTask+Helper.swift:21` captures `.invalid`
   and never ends the task on expiry; use the `APSManager.loop()` pattern (`var taskID`, handler ends it).
 - `uploadNoteTreatment(note:)` (`NightscoutManager.swift`) does not retry and is a no-op while upload is disabled;

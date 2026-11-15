@@ -252,8 +252,19 @@ import Testing
 @Suite("Pre-bolus loop target", .serialized) struct PreBolusLoopTargetTests {
     let now = Date(timeIntervalSince1970: 1_793_640_000)
 
-    /// Determinations newest first, `ago` seconds before `now`; the lookup runs on the objects' context.
-    func target(_ specs: [(ago: TimeInterval, target: Decimal?)]) async throws -> Decimal? {
+    /// One determination: `ago` seconds before `now` (negative = in the future), target in mg/dL. A struct, not a
+    /// tuple: tuple literals such as `(ago: 4 * 60, target: 150)` infer Int and do not convert (CI build error).
+    struct Spec {
+        let ago: TimeInterval
+        let target: Decimal?
+        init(ago: TimeInterval, target: Decimal?) {
+            self.ago = ago
+            self.target = target
+        }
+    }
+
+    /// Determinations newest first; the lookup runs on the objects' context.
+    func target(_ specs: [Spec]) async throws -> Decimal? {
         let stack = try await CoreDataStack.createForTests()
         let context = stack.newTaskContext()
         let now = self.now
@@ -271,16 +282,16 @@ import Testing
     }
 
     @Test("Newest fresh determination: its target (a temp target included)") func fresh() async throws {
-        let value = try await target([(ago: 4 * 60, target: 150), (ago: 9 * 60, target: 105)])
+        let value = try await target([Spec(ago: 4 * 60, target: 150), Spec(ago: 9 * 60, target: 105)])
         #expect(value == 150)
     }
 
     @Test("Age 0…30 min counts (both edges); older or in the future is no target") func age() async throws {
-        let fresh = try await target([(ago: 0, target: 105)])
-        let edge = try await target([(ago: 30 * 60, target: 105)])
-        let stale = try await target([(ago: 30 * 60 + 1, target: 105)])
-        let future = try await target([(ago: -1, target: 105)])
-        let farFuture = try await target([(ago: -10 * 60, target: 105)])
+        let fresh = try await target([Spec(ago: 0, target: 105)])
+        let edge = try await target([Spec(ago: 30 * 60, target: 105)])
+        let stale = try await target([Spec(ago: 30 * 60 + 1, target: 105)])
+        let future = try await target([Spec(ago: -1, target: 105)])
+        let farFuture = try await target([Spec(ago: -10 * 60, target: 105)])
         #expect(fresh == 105)
         #expect(edge == 105)
         #expect(stale == nil)
@@ -290,8 +301,8 @@ import Testing
 
     @Test("No determination, no target value, or 0: no target") func missing() async throws {
         let none = try await target([])
-        let empty = try await target([(ago: 60, target: nil)])
-        let zero = try await target([(ago: 60, target: 0)])
+        let empty = try await target([Spec(ago: 60, target: nil)])
+        let zero = try await target([Spec(ago: 60, target: 0)])
         #expect(none == nil)
         #expect(empty == nil)
         #expect(zero == nil)
