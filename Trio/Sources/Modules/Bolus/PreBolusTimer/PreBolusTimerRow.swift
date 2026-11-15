@@ -33,7 +33,9 @@ struct PreBolusTimerRow: View {
                         readings: PreBolusReading.from(glucose),
                         now: context.date,
                         mealType: notifier.mealType(now: context.date),
-                        loopTargetMgdl: PreBolusLoopTarget.mgdl(from: determinations, now: context.date)
+                        // `context.date` is the start of the minute; a determination delivered later in that minute
+                        // would look "in the future" to the 0…30 min check, so the lookup uses the real time.
+                        loopTargetMgdl: PreBolusLoopTarget.mgdl(from: determinations, now: max(context.date, Date()))
                     )
                     if let text = Self.text(for: plan) {
                         Text(text)
