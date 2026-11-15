@@ -417,7 +417,7 @@ small overlay):
 v4 (branch `feature/prebolus-target-rise`) — no rise extension at or below the loop target:
 - After the safety checks and "already eating": the loop target in force = `currentTarget` of the newest
   determination (`Treatments.StateModel.determination`, a temporary target included), mg/dL, only while that
-  determination is ≤ 30 min old (`PreBolusConstants.loopTargetMaxAge`, the window of Trio's own determination fetch).
+  determination is 0…30 min old — a future `deliverAt` is rejected (`PreBolusConstants.loopTargetMaxAge`, the window of Trio's own determination fetch).
   No such target → `PreBolusPlan.noTarget`, "Nėra galiojančio loop tikslo – laukimo patarimo nėra", no timer; the
   profile target is not used as a fallback.
 - BG ≤ that target (both mmol/L, one decimal, as Trio shows them) and rising → the wait is computed as for a flat

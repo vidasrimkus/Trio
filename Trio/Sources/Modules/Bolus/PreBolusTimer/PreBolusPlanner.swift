@@ -26,14 +26,14 @@ enum PreBolusPlan: Equatable {
 }
 
 /// The loop target in force: `currentTarget` of the newest determination (oref's target for that cycle — a
-/// temporary target included), mg/dL. `nil` when that determination is older than `loopTargetMaxAge` or has no
-/// target; never the profile target or any other guess.
+/// temporary target included), mg/dL. `nil` when that determination is older than `loopTargetMaxAge`, dated in the
+/// future, or has no target; never the profile target or any other guess.
 enum PreBolusLoopTarget {
     /// `determinations`: newest first, as `Treatments.StateModel.determination` holds them.
     static func mgdl(from determinations: [OrefDetermination], now: Date) -> Decimal? {
         guard let newest = determinations.first,
               let deliverAt = newest.deliverAt,
-              now.timeIntervalSince(deliverAt) <= PreBolusConstants.loopTargetMaxAge,
+              (0 ... PreBolusConstants.loopTargetMaxAge).contains(now.timeIntervalSince(deliverAt)), // not in the future
               let target = newest.currentTarget?.decimalValue,
               target > 0
         else { return nil }

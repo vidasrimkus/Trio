@@ -275,11 +275,17 @@ import Testing
         #expect(value == 150)
     }
 
-    @Test("Exactly 30 min old still counts; older is no target") func age() async throws {
+    @Test("Age 0…30 min counts (both edges); older or in the future is no target") func age() async throws {
+        let fresh = try await target([(ago: 0, target: 105)])
         let edge = try await target([(ago: 30 * 60, target: 105)])
         let stale = try await target([(ago: 30 * 60 + 1, target: 105)])
+        let future = try await target([(ago: -1, target: 105)])
+        let farFuture = try await target([(ago: -10 * 60, target: 105)])
+        #expect(fresh == 105)
         #expect(edge == 105)
         #expect(stale == nil)
+        #expect(future == nil)
+        #expect(farFuture == nil)
     }
 
     @Test("No determination, no target value, or 0: no target") func missing() async throws {
